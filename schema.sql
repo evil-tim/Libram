@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS entity (
     frequency text NOT NULL, -- e.g. daily, hourly, etc.
     has_weekend boolean NOT NULL DEFAULT false, -- whether the entity has price data on weekends (e.g. crypto vs stock)
     timezone text NOT NULL, -- timezone for the entity's price data
+    min_timestamp timestamptz, -- earliest timestamp for which price data is available for this entity
     -- we obtain data for an entity from different datasources
     UNIQUE (datasource_id, code)
 );
