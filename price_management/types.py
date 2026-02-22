@@ -2,9 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 @dataclass
 class EntityRecord:
+    id: UUID
     code: Optional[str] = None
     name: Optional[str] = None
     currency: Optional[str] = None

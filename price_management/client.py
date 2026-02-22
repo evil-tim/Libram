@@ -80,7 +80,7 @@ class PriceManagerClient:
         inserted = self.db.save_prices(db_entity_id, prices)
         return inserted
 
-    def query_entities(self, entity_id: UUID, entity_code: str, entity_name: str, frequency: str) -> Iterable[EntityRecord]:
+    def query_entities(self, entity_id: Optional[UUID], entity_code: Optional[str], entity_name: Optional[str], frequency: Optional[str]) -> Iterable[EntityRecord]:
         return self.db.query_entities(entity_id, entity_code, entity_name, frequency)
 
     def query_prices(self, entity_id: UUID, start: datetime, end: datetime) -> Iterable[PriceRecord]:

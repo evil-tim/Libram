@@ -11,7 +11,8 @@ Usage summary
   prices from start to end timestamp. Specify the entity by its id or code.
 - Call `query_entities(entity_id, entity_code, entity_name, freqency)` to return stored
   entities optionally filtered by id, code, name or frequency
-- Call `query_prices(entity_id, start, end)` to return stored prices.
+- Call `query_prices(entity_id, start, end)` to return stored prices. Date range is
+  start inclusive and end exclusive
 
 Datasource implementations
 

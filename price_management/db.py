@@ -145,6 +145,7 @@ class Database:
         for r in rows:
             out.append(
                 EntityRecord(
+                    id=UUID(r.get("id")),
                     code=r.get("code"),
                     name=r.get("name"),
                     currency=r.get("currency_id"),
@@ -160,15 +161,18 @@ class Database:
         return out
 
     def fetch_prices(self, entity_id: UUID, start: datetime, end: datetime) -> List[PriceRecord]:
-        """Query both single-timestamp and interval (OHLC) price rows covering the range."""
+        """Query both single-timestamp and interval (OHLC) price rows covering the range.
+        Range is inclusive of start and exclusive of end (i.e. [start, end)).
+        Returns a list of PriceRecord with timestamps in the requested range.
+        """
         q = text(
             """
             SELECT * FROM price
             WHERE entity_id = :entity_id
             AND (
-                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp <= :end)
+                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
                 OR
-                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start <= :end AND timestamp_end >= :start)
+                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end >= :start)
             )
             ORDER BY COALESCE(timestamp, timestamp_start)
             """
