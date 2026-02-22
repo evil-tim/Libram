@@ -1,0 +1,6 @@
+requests>=2.0
+python-dotenv>=1.2.1
+
+# Database requirements (from price-management/requirements.txt)
+SQLAlchemy>=1.4
+psycopg2-binary>=2.9

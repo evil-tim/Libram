@@ -1,0 +1,46 @@
+"""SLAMC Fund DataSource implementation.
+
+This datasource fetches fund net asset value (NAV) data from the SLAMC API.
+It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
+"""
+from typing import Any, Dict, Optional, Tuple, Union, Iterable
+from datetime import datetime
+from price_management.types import PriceRecord
+
+from price_sources.rest_datasource import RestJSONDatasource
+
+
+class SLAMCFundDataSource(RestJSONDatasource):
+
+    def build_request_params(
+        self,
+        entity: dict,
+        start: datetime,
+        end: datetime,
+        config: dict,
+        ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        # For SLAMC, we need to send the fund code and date range as query parameters.
+        return (
+            None,
+            {
+                "version" : "1",
+                "language" : "en-us"
+            },
+            {
+                "fundCode": entity.get("code"),
+                "dateFrom": start.isoformat() + "Z",
+                "dateTo": end.isoformat() + "Z",
+            })
+
+
+    def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
+        if not isinstance(data, list):
+            raise ValueError("Expected data to be a list of price records")
+
+        records = []
+        for item in data:
+            records.append(PriceRecord(
+                price=item.get("fundNetVal"),
+                timestamp=datetime.strptime(item.get("fundValDate"), "%Y-%m-%d"),
+            ))
+        return records
