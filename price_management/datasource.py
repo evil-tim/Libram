@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Iterable
 
-from .types import PriceRecord
+from libram_types.libram_types import PriceRecord
 
 
 class BaseDatasource(ABC):

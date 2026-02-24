@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from .types import EntityRecord, PriceRecord
+from libram_types.libram_types import EntityRecord, PriceRecord, TaskRecord
 
 
 class Database:
@@ -143,9 +143,12 @@ class Database:
 
         out: List[EntityRecord] = []
         for r in rows:
+            db_entity_id = r.get("id")
+            if not db_entity_id or not isinstance(db_entity_id, UUID):
+                raise RuntimeError("entity id is not a UUID")  # should not be possible, id is required UUID
             out.append(
                 EntityRecord(
-                    id=UUID(r.get("id")),
+                    id=db_entity_id,
                     code=r.get("code"),
                     name=r.get("name"),
                     currency=r.get("currency_id"),
@@ -156,6 +159,104 @@ class Database:
                     has_weekend=bool(r.get("has_weekend")) if r.get("has_weekend") else False,
                     timezone=r.get("timezone"),
                     min_timestamp=r.get("min_timestamp"),
+                )
+            )
+        return out
+
+    def count_tasks(self, entity_id: UUID, status: str) -> int:
+        """Return the number of tasks for an entity with the given status."""
+        q = text(
+            "SELECT COUNT(*) as c FROM task WHERE entity_id = :entity_id AND status = :status"
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "status": status})
+            row = res.mappings().first()
+            count = row.get("c") if row else None
+            return int(count) if count is not None else 0
+
+    def create_new_task(self, entity_id: UUID, start: datetime, end: datetime) -> TaskRecord:
+        """Create a new task row and return a TaskRecord for it."""
+        q = text(
+            "INSERT INTO task (entity_id, timestamp_start, timestamp_end) VALUES (:entity_id, :start, :end) RETURNING *"
+        )
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            row = res.mappings().first()
+            if not row:
+                raise RuntimeError("failed to create task")
+
+        task_id = row.get("id")
+        if not task_id or not isinstance(task_id, UUID):
+            raise RuntimeError("task id is not a UUID")
+        db_entity_id = row.get("entity_id")
+        if not db_entity_id or not isinstance(db_entity_id, UUID):
+            raise RuntimeError("task entity_id is not a UUID")
+
+        return TaskRecord(
+            id=task_id,
+            entity_id=db_entity_id,
+            timestamp_start=row.get("timestamp_start"),
+            timestamp_end=row.get("timestamp_end"),
+            status=row.get("status"),
+            retry_count=row.get("retry_count"),
+            created_at=row.get("created_at"),
+        )
+
+    def get_task_for_range(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[TaskRecord]:
+        """Return a single task matching the entity and exact start/end range, or None."""
+        q = text(
+            "SELECT * FROM task WHERE entity_id = :entity_id AND timestamp_start = :start AND timestamp_end = :end LIMIT 1"
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            row = res.mappings().first()
+            if not row:
+                return None
+
+        task_id = row.get("id")
+        if not task_id or not isinstance(task_id, UUID):
+            raise RuntimeError("task id is not a UUID")
+        db_entity_id = row.get("entity_id")
+        if not db_entity_id or not isinstance(db_entity_id, UUID):
+            raise RuntimeError("task entity_id is not a UUID")
+
+        return TaskRecord(
+            id=task_id,
+            entity_id=db_entity_id,
+            timestamp_start=row.get("timestamp_start"),
+            timestamp_end=row.get("timestamp_end"),
+            status=row.get("status"),
+            retry_count=row.get("retry_count"),
+            created_at=row.get("created_at"),
+        )
+
+    def get_open_tasks(self, limit: int) -> Iterable[TaskRecord]:
+        """Return a list of OPEN tasks ordered by created_at ascending, limited to the specified number."""
+        q = text(
+            "SELECT * FROM task WHERE status = 'OPEN' ORDER BY created_at ASC LIMIT :limit"
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"limit": limit})
+            rows = res.mappings().all()
+
+        out: List[TaskRecord] = []
+        for r in rows:
+
+            task_id = r.get("id")
+            if not task_id or not isinstance(task_id, UUID):
+                raise RuntimeError("task id is not a UUID")
+            db_entity_id = r.get("entity_id")
+            if not db_entity_id or not isinstance(db_entity_id, UUID):
+                raise RuntimeError("task entity_id is not a UUID")
+            out.append(
+                TaskRecord(
+                    id=task_id,
+                    entity_id=db_entity_id,
+                    timestamp_start=r.get("timestamp_start"),
+                    timestamp_end=r.get("timestamp_end"),
+                    status=r.get("status"),
+                    retry_count=r.get("retry_count"),
+                    created_at=r.get("created_at"),
                 )
             )
         return out

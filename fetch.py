@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from uuid import UUID
 from dotenv import load_dotenv
+from libram_database.db import Database
 from price_management.client import PriceManagerClient
 
 def main():
@@ -20,11 +21,12 @@ def main():
     args = parser.parse_args()
     # get db string from environment variable or use default
     load_dotenv()
-    db = os.getenv("LIBRAM_DB")
-    if not db:
+    db_string = os.getenv("LIBRAM_DB")
+    if not db_string:
         print("Error: LIBRAM_DB environment variable not set")
         return
 
+    db = Database(db_string)
     client = PriceManagerClient(db)
     inserted_count = client.fetch_and_store(
         UUID(str(args.entity_id)) if args.entity_id else None,

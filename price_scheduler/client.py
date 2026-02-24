@@ -3,9 +3,10 @@ from typing import Iterable, List, Optional, Tuple
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from price_management import PriceManagerClient, EntityRecord, PriceRecord
+from libram_database.db import Database
+from price_management import PriceManagerClient
 
-from .types import TaskRecord
+from libram_types.libram_types import PriceRecord, TaskRecord
 
 
 def _month_range_for(dt: datetime) -> Tuple[datetime, datetime]:
@@ -30,7 +31,7 @@ def _month_has_missing_prices(prices: Iterable[PriceRecord], start: datetime, en
         if ts is None:
             continue
         present.add(ts.date())
-
+    print(f"Present price dates: {present}")
     d = start.date()
     while d < end.date():
         if has_weekend:
@@ -38,6 +39,7 @@ def _month_has_missing_prices(prices: Iterable[PriceRecord], start: datetime, en
         else:
             expect_date_present = d.weekday() < 5
 
+        print(f"Checking date {d} - expect present: {expect_date_present}, present: {d in present}")
         if expect_date_present and d not in present:
             return True
 
@@ -51,8 +53,9 @@ class PriceSchedulerClient:
     Construct with a DSN string; a `Database` is created internally.
     """
 
-    def __init__(self, price_manager_client: PriceManagerClient):
+    def __init__(self, price_manager_client: PriceManagerClient, db: Database):
         self.price_manager_client = price_manager_client
+        self.db = db
 
     def generate_monthly_tasks(self, entity_id: Optional[UUID] = None, min_date: Optional[datetime] = None) -> Iterable[TaskRecord]:
         created: List[TaskRecord] = []
@@ -65,11 +68,10 @@ class PriceSchedulerClient:
 
         for entity in entities:
             # count OPEN tasks for the entity
-            open_count = 0
-            # TODO: get open task count for entity from database
-
-            # quit if there are already 2 or more OPEN tasks for the entity to avoid creating too many tasks for the same entity
+            open_count = self.db.count_tasks(entity.id, "OPEN")
+            # quit if there are already 1 or more OPEN tasks for the entity to avoid creating too many tasks for the same entity
             if open_count >= 2:
+                print(f"Entity {entity.name} ({entity.code}) - {entity.id} has {open_count} OPEN tasks, skipping")
                 continue
 
             # get the previous month range as a starting point for scanning
@@ -83,10 +85,14 @@ class PriceSchedulerClient:
                 stop_date = datetime(2000, 1, 1)  # arbitrary default stop date if none provided
             stop_date = stop_date.date()
 
+            print(f"Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing prices starting from {scan.date()} back to {stop_date}")
+
             while True:
                 # get date range for the month to scan
                 # start date is inclusive, end date is exclusive
                 month_start, month_end = _month_range_for(scan)
+
+                print(f"Scanning month {month_start.date()} to {month_end.date()}")
 
                 # stop date is inclusive - quit if the scan window is now outside the stop date
                 if month_end.date() < stop_date:
@@ -97,29 +103,27 @@ class PriceSchedulerClient:
 
                 # check if there are missing prices for the month
                 if _month_has_missing_prices(prices, month_start, month_end, entity.has_weekend):
+                    print(f"Month {month_start.date()} to {month_end.date()} has missing prices, checking for existing tasks")
+
                     # check if there is already a task for the entity and month range
 
-                    current_task = None
-                    # TODO: get the task for the entity and month range from database
+                    current_task = self.db.get_task_for_range(entity.id, month_start, month_end)
 
                     if not current_task:
+                        print(f"No existing task for month {month_start.date()} to {month_end.date()}, creating new task")
                         # create a new task for the entity and month range
-                        # TODO: insert a new task into the database with status OPEN and get the created task record
-                        # tr = TaskRecord(
-                        #    id=row["id"],
-                        #    entity_id=row["entity_id"],
-                        #    timestamp_start=row["timestamp_start"],
-                        #    timestamp_end=row["timestamp_end"],
-                        #    status=row["status"],
-                        #    retry_count=row["retry_count"],
-                        #    created_at=row["created_at"],
-                        #)
-                        # created.append(tr)
+                        tr = self.db.create_new_task(entity.id, month_start, month_end)
+                        created.append(tr)
                         break
                     else:
                         if current_task.status == "OPEN":
+                            print(f"Existing OPEN task {current_task.id} for month {month_start.date()} to {month_end.date()}, skipping")
                             # if there is already an OPEN task for the entity and month range, skip creating a new task
                             break
+                        else:
+                            print(f"Existing task {current_task.id} for month {month_start.date()} to {month_end.date()} is not OPEN, continuing scan")
+                else:
+                    print(f"Month {month_start.date()} to {month_end.date()} has no missing prices, continuing scan")
                 # if there are no missing prices for the month
                 # OR if there is a task for the month range but it's not OPEN
                 # continue scanning previous months to find the previous one with no task or an OPEN task

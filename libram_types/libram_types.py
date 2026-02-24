@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
+
 @dataclass
 class EntityRecord:
     id: UUID
@@ -18,6 +19,7 @@ class EntityRecord:
     timezone: Optional[str] = None
     min_timestamp: Optional[datetime] = None
 
+
 @dataclass
 class PriceRecord:
     # single price point
@@ -30,3 +32,14 @@ class PriceRecord:
     close: Optional[Decimal] = None
     timestamp_start: Optional[datetime] = None
     timestamp_end: Optional[datetime] = None
+
+
+@dataclass
+class TaskRecord:
+    id: UUID
+    entity_id: UUID
+    timestamp_start: Optional[datetime] = None
+    timestamp_end: Optional[datetime] = None
+    status: Optional[str] = None
+    retry_count: Optional[int] = None
+    created_at: Optional[datetime] = None

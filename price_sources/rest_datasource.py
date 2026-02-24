@@ -12,7 +12,8 @@ from datetime import datetime
 
 import requests
 
-from price_management import BaseDatasource, PriceRecord
+from libram_types.libram_types import PriceRecord
+from price_management import BaseDatasource
 
 
 class RestJSONDatasource(BaseDatasource):

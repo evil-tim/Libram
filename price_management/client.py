@@ -1,10 +1,11 @@
 import importlib
 from datetime import datetime
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional
 from uuid import UUID
 
-from .db import Database
-from .types import EntityRecord, PriceRecord
+from libram_database.db import Database
+from libram_types.libram_types import EntityRecord, PriceRecord
+
 from .datasource import BaseDatasource
 
 
@@ -36,8 +37,8 @@ class PriceManagerClient:
     provided, a `Database` will be constructed internally.
     """
 
-    def __init__(self, db: str):
-        self.db = Database(db)
+    def __init__(self, db: Database):
+        self.db = db
 
     def fetch_and_store(self, entity_id: Optional[UUID], entity_code: Optional[str], start: datetime, end: datetime) -> int:
         entity = None

@@ -6,7 +6,7 @@ It extends the RestJSONDatasource and implements the required methods to build t
 import json
 from typing import Any, Dict, Optional, Tuple, Union, Iterable
 from datetime import datetime
-from price_management.types import PriceRecord
+from libram_types.libram_types import PriceRecord
 
 from price_sources.rest_datasource import RestJSONDatasource
 
