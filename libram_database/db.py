@@ -76,7 +76,10 @@ class Database:
         with self.engine.begin() as conn:
             for p in prices:
                 # skip if price is null to avoid inserting invalid data
-                if p.price is None:
+                has_single_price = p.price is not None and p.timestamp is not None
+                has_ohlc = (p.open is not None and p.high is not None and p.low is not None and p.close is not None
+                            and p.timestamp_start is not None and p.timestamp_end is not None)
+                if not has_single_price and not has_ohlc:
                     continue
 
                 # skip if timestamp is null or not a valid datetime to avoid inserting invalid data

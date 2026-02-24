@@ -70,7 +70,7 @@ class PriceSchedulerClient:
             # count OPEN tasks for the entity
             open_count = self.db.count_tasks(entity.id, "OPEN")
             # quit if there are already 1 or more OPEN tasks for the entity to avoid creating too many tasks for the same entity
-            if open_count >= 2:
+            if open_count >= 1:
                 print(f"Entity {entity.name} ({entity.code}) - {entity.id} has {open_count} OPEN tasks, skipping")
                 continue
 

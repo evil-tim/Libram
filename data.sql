@@ -1,136 +1,25 @@
-INSERT INTO datasource (name, implementation, config)
-VALUES (
-    'bpi-fund-rest-json',
-    'price_sources.bpi_fund_datasource:BPIFundDataSource',
-    '{
-        "url": "https://www.bpi.com.ph/content/bpi/ph/en/group/bpiwealth/our-solutions/personal/investment-solutions/funds/short-term-invest-fund/jcr:content/root/container/dynamicgraph_copy.model.json",
-        "method": "GET",
-        "headers": {
-            "Accept": "* / *",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "en,en-US;q=0.9",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0"
-        }
-    }'::jsonb
-  );
-INSERT INTO datasource (name, implementation, config)
-VALUES (
-    'manulife-fund-rest-json',
-    'price_sources.manulife_fund_datasource:ManulifeFundDataSource',
-    '{
-        "url": "https://www.manulifeim.com.ph/our-funds/fund-details/_jcr_content/root/responsivegrid_1172645951/responsivegrid/funddetails.prices.fid-{code}.html",
-        "method": "GET",
-        "headers": {
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "application/json, text/javascript",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "en,en-US;q=0.9",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0"
-        }
-    }'::jsonb
-  );
-INSERT INTO datasource (name, implementation, config)
-VALUES (
-    'slamc-fund-rest-json',
-    'price_sources.slamc_fund_datasource:SLAMCFundDataSource',
-    '{
-        "url": "https://www.sunlife.com.ph/funds/navprice/mf",
-        "method": "POST",
-        "headers": {
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/json; charset=utf-8",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "en,en-US;q=0.9",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0"
-        }
-    }'::jsonb
-  );
-
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'U1STF',
-    'BPI Short Term Fund',
-    '0c725aae-3335-489f-8757-d78c32634c55',
-    'FUND',
-    'DAILY',
-    true,
-    'Asia/Manila',
-    '{}' :: jsonb
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'GT4',
-    'Manulife Global Technology Equity Feeder Fund PhP-Unhedged Share Class A',
-    '0240e2e7-620a-46ee-978c-89356d55f338',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}' :: jsonb
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'AG4',
-    'Manulife American Growth Equity Feeder Fund PhP-Unhedged Share Class A',
-    '0240e2e7-620a-46ee-978c-89356d55f338',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}' :: jsonb
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'CF0016',
-    'Sun Life Prosperity World Equity Index Feeder Fund',
-    '6b26a17e-aa97-46ce-918a-136680223354',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}'
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'CF0001',
-    'Sun Life Prosperity Bond Fund',
-    '6b26a17e-aa97-46ce-918a-136680223354',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}'
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'CF0002',
-    'Sun Life Prosperity Balanced Fund',
-    '6b26a17e-aa97-46ce-918a-136680223354',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}'
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'CF0003',
-    'Sun Life Prosperity Philippine Equity Fund',
-    '6b26a17e-aa97-46ce-918a-136680223354',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}'
-);
-INSERT INTO entity (code, name, datasource_id, type, frequency, has_weekend, timezone, config)
-VALUES (
-    'CF0009',
-    'Sun Life Prosperity Index Fund',
-    '6b26a17e-aa97-46ce-918a-136680223354',
-    'FUND',
-    'DAILY',
-    false,
-    'Asia/Manila',
-    '{}'
-);
+INSERT INTO public.datasource (id,"name","implementation",config) VALUES
+    ('0240e2e7-620a-46ee-978c-89356d55f338'::uuid,'manulife-fund-rest-json','price_sources.manulife_fund_datasource:ManulifeFundDataSource','{"url": "https://www.manulifeim.com.ph/our-funds/fund-details/_jcr_content/root/responsivegrid_1172645951/responsivegrid/funddetails.prices.fid-{code}.html", "method": "GET", "headers": {"Accept": "application/json, text/javascript", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0", "Accept-Encoding": "gzip, deflate, br, zstd", "Accept-Language": "en,en-US;q=0.9", "X-Requested-With": "XMLHttpRequest"}}'),
+    ('0c725aae-3335-489f-8757-d78c32634c55'::uuid,'bpi-fund-rest-json','price_sources.bpi_fund_datasource:BPIFundDataSource','{"url": "https://www.bpi.com.ph/content/bpi/ph/en/group/bpiwealth/our-solutions/personal/investment-solutions/funds/short-term-invest-fund/jcr:content/root/container/dynamicgraph_copy.model.json", "method": "GET", "headers": {"Accept": "*/*", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0", "Accept-Encoding": "gzip, deflate, br, zstd", "Accept-Language": "en,en-US;q=0.9"}}'),
+    ('77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'pse-edge-rest-json','price_sources.pse_edge_datasource:PSEEdgeDataSource','{"url": "https://edge.pse.com.ph/common/DisclosureCht.ax", "method": "POST", "headers": {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0", "Content-Type": "application/json", "Accept-Encoding": "gzip, deflate, br, zstd", "Accept-Language": "en,en-US;q=0.9", "X-Requested-With": "XMLHttpRequest"}}'),
+    ('6b26a17e-aa97-46ce-918a-136680223354'::uuid,'slamc-fund-rest-json','price_sources.slamc_fund_datasource:SLAMCFundDataSource','{"url": "https://www.sunlife.com.ph/funds/navprice/mf", "method": "POST", "headers": {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0", "Content-Type": "application/json; charset=utf-8", "Accept-Encoding": "gzip, deflate, br, zstd", "Accept-Language": "en,en-US;q=0.9", "X-Requested-With": "XMLHttpRequest"}}');
+----
+INSERT INTO public.entity (id,code,"name",currency_id,datasource_id,config,"type",frequency,has_weekend,timezone,min_timestamp) VALUES
+    ('33574676-57fa-4b59-9eda-5c9e2fce42f6'::uuid,'GT4','Manulife Global Technology Equity Feeder Fund PhP-Unhedged Share Class A',NULL,'0240e2e7-620a-46ee-978c-89356d55f338'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2022-01-20 00:00:00+08'),
+    ('62fdee3b-cdc5-41cb-9a48-41e973811403'::uuid,'AG4','Manulife American Growth Equity Feeder Fund PhP-Unhedged Share Class A',NULL,'0240e2e7-620a-46ee-978c-89356d55f338'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2019-05-15 00:00:00+08'),
+    ('85e22dd8-2f1f-4511-8973-3f6eec033519'::uuid,'CF0016','Sun Life Prosperity World Equity Index Feeder Fund',NULL,'6b26a17e-aa97-46ce-918a-136680223354'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2020-07-06 00:00:00+08'),
+    ('5cd58902-b018-44cc-a2cb-3a0c0496ac52'::uuid,'CF0001','Sun Life Prosperity Bond Fund',NULL,'6b26a17e-aa97-46ce-918a-136680223354'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2001-01-01 00:00:00+08'),
+    ('e82e50c4-a04e-4a8b-9f78-0bec28cec6e0'::uuid,'CF0002','Sun Life Prosperity Balanced Fund',NULL,'6b26a17e-aa97-46ce-918a-136680223354'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2001-01-01 00:00:00+08'),
+    ('16098f17-423b-4e0a-8fe8-f50ec8f8cea7'::uuid,'CF0003','Sun Life Prosperity Philippine Equity Fund',NULL,'6b26a17e-aa97-46ce-918a-136680223354'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2001-01-01 00:00:00+08'),
+    ('ad16abf2-8161-47e4-991d-bf68c8ec4396'::uuid,'CF0009','Sun Life Prosperity Index Fund',NULL,'6b26a17e-aa97-46ce-918a-136680223354'::uuid,'{}','FUND','DAILY',false,'Asia/Manila','2015-05-04 00:00:00+08'),
+    ('3ebe9f1a-17f2-41a8-9e6a-7c9dc9c4c203'::uuid,'U1STF','BPI Short Term Fund',NULL,'0c725aae-3335-489f-8757-d78c32634c55'::uuid,'{}','FUND','DAILY',true,'Asia/Manila','2005-04-04 00:00:00+08'),
+    ('63eb17f3-33c8-43c0-8ad4-ae30dd3ac35b'::uuid,'FMETF','First Metro Philippine Equity Exchange Traded Fund, Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "649", "security_id": "592"}','STOCK','DAILY',false,'Asia/Manila','2009-08-03 00:00:00+08'),
+    ('b3931bae-ef63-4bf8-b668-0801a93689a5'::uuid,'ICT','International Container Terminal Services, Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "83", "security_id": "142"}','STOCK','DAILY',false,'Asia/Manila','2013-12-02 00:00:00+08');
+INSERT INTO public.entity (id,code,"name",currency_id,datasource_id,config,"type",frequency,has_weekend,timezone,min_timestamp) VALUES
+    ('caa38528-d2a2-4938-b149-ca9f723ee45c'::uuid,'CREIT','Citicore Energy REIT Corp.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "691", "security_id": "686"}','STOCK','DAILY',false,'Asia/Manila','2022-02-22 00:00:00+08'),
+    ('96012757-12d4-496a-a044-c6f60e0e6179'::uuid,'RCR','RL Commercial REIT, Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "684", "security_id": "670"}','STOCK','DAILY',false,'Asia/Manila','2021-09-14 00:00:00+08'),
+    ('845b4665-7f25-49d7-8df0-de123878c0c6'::uuid,'MBT','Metropolitan Bank & Trust Company',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "128", "security_id": "108"}','STOCK','DAILY',false,'Asia/Manila','2009-08-03 00:00:00+08'),
+    ('b85e4199-28e1-4276-9996-28fd983cf6fa'::uuid,'BPI','Bank of the Philippine Islands',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "234", "security_id": "101"}','STOCK','DAILY',false,'Asia/Manila','2009-08-03 00:00:00+08'),
+    ('bbeb4b5f-c190-4c6d-9972-80c665020f60'::uuid,'AREIT','AREIT, Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "679", "security_id": "655"}','STOCK','DAILY',false,'Asia/Manila','2020-08-13 00:00:00+08'),
+    ('8b61a996-2112-44ac-94ac-8689d9f1b2e8'::uuid,'OGP','OceanaGold (Philippines), Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "704", "security_id": "716"}','STOCK','DAILY',false,'Asia/Manila','2024-05-13 00:00:00+08'),
+    ('30c6d23e-8658-400e-a0be-24f058d505e3'::uuid,'MWIDE','Megawide Construction Corporation',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "627", "security_id": "564"}','STOCK','DAILY',false,'Asia/Manila','2011-02-18 00:00:00+08');
