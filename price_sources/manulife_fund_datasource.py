@@ -24,6 +24,16 @@ class ManulifeFundDataSource(RestJSONDatasource):
             None,
             None)
 
+    def build_headers(
+        self,
+        base_headers: Dict[str, str],
+        entity: dict,
+        config: dict,
+    ) -> Dict[str, str]:
+        headers = base_headers.copy()
+        headers["Referer"] = headers.get("Referer", "").format(code=entity.get("code"))
+        return headers
+
 
     def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
         if not isinstance(data, list):

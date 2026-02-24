@@ -41,6 +41,7 @@ class RestJSONDatasource(BaseDatasource):
     def fetch(
         self,
         url: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
         request_params: Optional[Dict[str, Any]] = None,
         request_body: Optional[Dict[str, Any]] = None,
     ) -> Union[Dict[str, Any], list]:
@@ -61,7 +62,7 @@ class RestJSONDatasource(BaseDatasource):
         resp = requests.request(
             method=self.method,
             url=url or self.url,
-            headers=self.headers,
+            headers=headers,
             params=request_params,
             json=request_body,
             timeout=self.timeout,
@@ -94,11 +95,29 @@ class RestJSONDatasource(BaseDatasource):
         """
         raise NotImplementedError()
 
+    def build_headers(
+        self,
+        base_headers: Dict[str, str],
+        entity: dict,
+        config: dict,
+    ) -> Dict[str, str]:
+        """Build the request headers based on the base headers, entity, and config.
+
+        By default, this just returns the base headers, but implementations can override
+        this to add dynamic headers (e.g. for authentication).
+        """
+        return base_headers
+
     def fetch_prices(self, entity: dict, start: datetime, end: datetime) -> Iterable[PriceRecord]:
-        url,  request_params, request_body = self.build_request_params(
+        url, request_params, request_body = self.build_request_params(
             entity=entity,
             start=start,
             end=end,
+            config=self.config)
+
+        headers = self.build_headers(
+            self.headers,
+            entity=entity,
             config=self.config)
 
         print(url)
@@ -107,6 +126,7 @@ class RestJSONDatasource(BaseDatasource):
 
         data = self.fetch(
             url=url,
+            headers=headers,
             request_params=request_params,
             request_body=request_body)
 
