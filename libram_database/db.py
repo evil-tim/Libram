@@ -18,7 +18,16 @@ class Database:
         self.dsn = dsn
         self.engine: Engine = create_engine(dsn)
 
-    def get_entity_by_id(self, identifier: UUID) -> Optional[dict[str, object]]:
+    # datasource methods
+    def get_datasource_raw(self, datasource_id: UUID) -> Optional[dict[str, object]]:
+        with self.engine.connect() as conn:
+            q = text("SELECT * FROM datasource WHERE id = :id")
+            res = conn.execute(q, {"id": str(datasource_id)})
+            row = res.mappings().first()
+            return dict(row) if row else None
+
+    # entity methods
+    def get_entity_by_id_raw(self, identifier: UUID) -> Optional[dict[str, object]]:
         """Lookup an entity by UUID.
 
         Returns a mapping with keys matching the `entity` table columns.
@@ -29,7 +38,7 @@ class Database:
             row = res.mappings().first()
             return dict(row) if row else None
 
-    def get_entity_by_code(self, code: str) -> Optional[dict[str, object]]:
+    def get_entity_by_code_raw(self, code: str) -> Optional[dict[str, object]]:
         """Lookup an entity by code.
 
         Returns a mapping with keys matching the `entity` table columns.
@@ -40,13 +49,45 @@ class Database:
             row = res.mappings().first()
             return dict(row) if row else None
 
-    def get_datasource(self, datasource_id) -> Optional[dict[str, object]]:
+    def query_entities(self, entity_id: Optional[UUID], entity_code: Optional[str], entity_name: Optional[str], frequency: Optional[str]) -> Iterable[EntityRecord]:
+        """Queries entities by code and/or name. Code parameter is exact match. Name parameter supports partial match (LIKE %param%)."""
+        q = text(
+            """
+            SELECT e.* FROM entity e
+            WHERE (:entity_id IS NULL OR e.id = :entity_id)
+            AND (:code IS NULL OR e.code = :code)
+            AND (:name IS NULL OR e.name ILIKE '%' || :name || '%')
+            AND (:frequency IS NULL OR e.frequency = :frequency)
+            ORDER BY e.type, e.code
+            """
+        )
         with self.engine.connect() as conn:
-            q = text("SELECT * FROM datasource WHERE id = :id")
-            res = conn.execute(q, {"id": str(datasource_id)})
-            row = res.mappings().first()
-            return dict(row) if row else None
+            res = conn.execute(q, {"entity_id": entity_id, "code": entity_code, "name": entity_name, "frequency": frequency})
+            rows = res.mappings().all()
 
+        out: List[EntityRecord] = []
+        for r in rows:
+            db_entity_id = r.get("id")
+            if not db_entity_id or not isinstance(db_entity_id, UUID):
+                raise RuntimeError("entity id is not a UUID")  # should not be possible, id is required UUID
+            out.append(
+                EntityRecord(
+                    id=db_entity_id,
+                    code=r.get("code"),
+                    name=r.get("name"),
+                    currency=r.get("currency_id"),
+                    datasource=r.get("datasource_id"),
+                    config=r.get("config"),
+                    type=r.get("type"),
+                    frequency=r.get("frequency"),
+                    has_weekend=bool(r.get("has_weekend")) if r.get("has_weekend") else False,
+                    timezone=r.get("timezone"),
+                    min_timestamp=r.get("min_timestamp"),
+                )
+            )
+        return out
+
+    # price methods
     def save_prices(self, entity_id: UUID, prices: Iterable[PriceRecord]) -> int:
         """Insert price rows. Returns number of rows inserted."""
 
@@ -129,43 +170,45 @@ class Database:
 
         return len(rows)
 
-    def query_entities(self, entity_id: Optional[UUID], entity_code: Optional[str], entity_name: Optional[str], frequency: Optional[str]) -> Iterable[EntityRecord]:
-        """Queries entities by code and/or name. Code parameter is exact match. Name parameter supports partial match (LIKE %param%)."""
+    def query_prices(self, entity_id: UUID, start: datetime, end: datetime, page: int = 0, size: int = 10) -> Iterable[PriceRecord]:
+        """Query both single-timestamp and interval (OHLC) price rows covering the range.
+        Range is inclusive of start and exclusive of end (i.e. [start, end)).
+        Returns a list of PriceRecord with timestamps in the requested range.
+        """
         q = text(
             """
-            SELECT e.* FROM entity e
-            WHERE (:entity_id IS NULL OR e.id = :entity_id)
-            AND (:code IS NULL OR e.code = :code)
-            AND (:name IS NULL OR e.name ILIKE '%' || :name || '%')
-            AND (:frequency IS NULL OR e.frequency = :frequency)
+            SELECT * FROM price
+            WHERE entity_id = :entity_id
+            AND (
+                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
+                OR
+                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end >= :start)
+            )
+            ORDER BY COALESCE(timestamp, timestamp_start)
+            LIMIT :limit OFFSET :offset
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": entity_id, "code": entity_code, "name": entity_name, "frequency": frequency})
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end, "limit": size, "offset": page * size})
             rows = res.mappings().all()
 
-        out: List[EntityRecord] = []
+        out = []
         for r in rows:
-            db_entity_id = r.get("id")
-            if not db_entity_id or not isinstance(db_entity_id, UUID):
-                raise RuntimeError("entity id is not a UUID")  # should not be possible, id is required UUID
             out.append(
-                EntityRecord(
-                    id=db_entity_id,
-                    code=r.get("code"),
-                    name=r.get("name"),
-                    currency=r.get("currency_id"),
-                    datasource=r.get("datasource_id"),
-                    config=r.get("config"),
-                    type=r.get("type"),
-                    frequency=r.get("frequency"),
-                    has_weekend=bool(r.get("has_weekend")) if r.get("has_weekend") else False,
-                    timezone=r.get("timezone"),
-                    min_timestamp=r.get("min_timestamp"),
+                PriceRecord(
+                    price=r.get("price"),
+                    timestamp=r.get("timestamp"),
+                    open=r.get("open"),
+                    high=r.get("high"),
+                    low=r.get("low"),
+                    close=r.get("close"),
+                    timestamp_start=r.get("timestamp_start"),
+                    timestamp_end=r.get("timestamp_end"),
                 )
             )
         return out
 
+    # task methods
     def count_tasks(self, entity_id: UUID, status: str) -> int:
         """Return the number of tasks for an entity with the given status."""
         q = text(
@@ -203,6 +246,7 @@ class Database:
             status=row.get("status"),
             retry_count=row.get("retry_count"),
             created_at=row.get("created_at"),
+            next_run_at=row.get("next_run_at"),
         )
 
     def get_task_for_range(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[TaskRecord]:
@@ -233,16 +277,16 @@ class Database:
             created_at=row.get("created_at"),
         )
 
-    def get_open_tasks(self, limit: int) -> Iterable[TaskRecord]:
-        """Return a list of OPEN tasks ordered by created_at ascending, limited to the specified number."""
+    def query_tasks(self, status: Optional[str], page: int = 0, size: int = 10) -> Iterable[TaskRecord]:
+        """Return a list of tasks optionally filtered by status, ordered by created_at ascending, limited to the specified number."""
         q = text(
-            "SELECT * FROM task WHERE status = 'OPEN' ORDER BY created_at ASC LIMIT :limit"
+            "SELECT * FROM task WHERE (status = :status OR :status IS NULL) ORDER BY created_at ASC LIMIT :limit OFFSET :offset"
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"limit": limit})
+            res = conn.execute(q, {"status": status, "limit": size, "offset": page * size})
             rows = res.mappings().all()
 
-        out: List[TaskRecord] = []
+        out = []
         for r in rows:
 
             task_id = r.get("id")
@@ -260,43 +304,83 @@ class Database:
                     status=r.get("status"),
                     retry_count=r.get("retry_count"),
                     created_at=r.get("created_at"),
+                    next_run_at=r.get("next_run_at"),
                 )
             )
         return out
 
-    def fetch_prices(self, entity_id: UUID, start: datetime, end: datetime) -> List[PriceRecord]:
-        """Query both single-timestamp and interval (OHLC) price rows covering the range.
-        Range is inclusive of start and exclusive of end (i.e. [start, end)).
-        Returns a list of PriceRecord with timestamps in the requested range.
+    def find_and_lock_next_task(self, retry_delay_seconds: int) -> Optional[TaskRecord]:
+        """Find the next task that is ready to be executed
+        (status OPEN, and next_run_at <= now), and atomically update its status to IN_PROGRESS and increment retry_count.
+
+        Returns the TaskRecord for the locked task, or None if no task is ready.
         """
         q = text(
             """
-            SELECT * FROM price
-            WHERE entity_id = :entity_id
-            AND (
-                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
-                OR
-                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end >= :start)
+            WITH next_task AS (
+                SELECT id FROM task
+                WHERE status = 'OPEN'
+                    AND next_run_at <= now()
+                ORDER BY created_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
             )
-            ORDER BY COALESCE(timestamp, timestamp_start)
+            UPDATE task
+            SET
+                status = 'IN_PROGRESS',
+                retry_count = retry_count + 1,
+                next_run_at = now() + (interval '1 second' * (:retry_delay_seconds * power(3, retry_count + 1)))
+            FROM next_task
+            WHERE task.id = next_task.id
+            RETURNING task.*
             """
         )
-        with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
-            rows = res.mappings().all()
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {"retry_delay_seconds": retry_delay_seconds})
+            row = res.mappings().first()
+            if not row:
+                return None
 
-        out: List[PriceRecord] = []
-        for r in rows:
-            out.append(
-                PriceRecord(
-                    price=r.get("price"),
-                    timestamp=r.get("timestamp"),
-                    open=r.get("open"),
-                    high=r.get("high"),
-                    low=r.get("low"),
-                    close=r.get("close"),
-                    timestamp_start=r.get("timestamp_start"),
-                    timestamp_end=r.get("timestamp_end"),
-                )
+            task_id = row.get("id")
+            if not task_id or not isinstance(task_id, UUID):
+                raise RuntimeError("task id is not a UUID")
+            db_entity_id = row.get("entity_id")
+            if not db_entity_id or not isinstance(db_entity_id, UUID):
+                raise RuntimeError("task entity_id is not a UUID")
+
+            return TaskRecord(
+                id=task_id,
+                entity_id=db_entity_id,
+                timestamp_start=row.get("timestamp_start"),
+                timestamp_end=row.get("timestamp_end"),
+                status=row.get("status"),
+                retry_count=row.get("retry_count"),
+                created_at=row.get("created_at"),
+                next_run_at=row.get("next_run_at"),
             )
-        return out
+
+    def fail_task(self, task_id: UUID, max_retries: int):
+        """ Handle task failure, if retry_count exceeds max_retries, set status to FAILED,
+        otherwise set it back to OPEN for retry. Locking the task already incremented the
+        retry_count, so we just need to check if it exceeded max_retries."""
+        q = text(
+            """
+            UPDATE task
+            SET status = CASE WHEN retry_count >= :max_retries THEN 'FAILED' ELSE 'OPEN' END
+            WHERE id = :task_id
+            """
+        )
+        with self.engine.begin() as conn:
+            conn.execute(q, {"task_id": str(task_id), "max_retries": max_retries})
+
+    def complete_task(self, task_id: UUID):
+        """Set task status to COMPLETED."""
+        q = text(
+            """
+            UPDATE task
+            SET status = 'COMPLETED'
+            WHERE id = :task_id
+            """
+        )
+        with self.engine.begin() as conn:
+            conn.execute(q, {"task_id": str(task_id)})

@@ -44,16 +44,23 @@ class PriceManagerClient:
         entity = None
         # try to lookup entity by id first
         if entity_id:
-            entity = self.db.get_entity_by_id(entity_id)
+            entity = self.db.get_entity_by_id_raw(entity_id)
         # try to lookup entity by code if not found by id
         if entity_code and not entity:
-            entity = self.db.get_entity_by_code(entity_code)
+            entity = self.db.get_entity_by_code_raw(entity_code)
 
         # if entity is still not found, raise an error
         if not entity:
             raise ValueError("entity not found")
 
-        datasource = self.db.get_datasource(entity["datasource_id"])
+        # if entity's datasource_id is not set or is not a UUID, raise an error
+        datasource_id = entity.get("datasource_id")
+        if not datasource_id:
+            raise ValueError("entity has no datasource_id")
+        if not isinstance(datasource_id, UUID):
+            raise ValueError("entity's datasource_id is not a UUID")
+
+        datasource = self.db.get_datasource_raw(datasource_id)
         if not datasource:
             raise ValueError("datasource not found for entity")
 
@@ -84,10 +91,10 @@ class PriceManagerClient:
     def query_entities(self, entity_id: Optional[UUID], entity_code: Optional[str], entity_name: Optional[str], frequency: Optional[str]) -> Iterable[EntityRecord]:
         return self.db.query_entities(entity_id, entity_code, entity_name, frequency)
 
-    def query_prices(self, entity_id: UUID, start: datetime, end: datetime) -> Iterable[PriceRecord]:
-        entity = self.db.get_entity_by_id(entity_id)
+    def query_prices(self, entity_id: UUID, start: datetime, end: datetime, page: int = 0, size: int = 10) -> Iterable[PriceRecord]:
+        entity = self.db.get_entity_by_id_raw(entity_id)
         if not entity:
             raise ValueError("entity not found")
 
         # ensure entity id is a UUID instance
-        return self.db.fetch_prices(entity_id, start, end)
+        return self.db.query_prices(entity_id, start, end, page, size)

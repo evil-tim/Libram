@@ -43,3 +43,4 @@ class TaskRecord:
     status: Optional[str] = None
     retry_count: Optional[int] = None
     created_at: Optional[datetime] = None
+    next_run_at: Optional[datetime] = None

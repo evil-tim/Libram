@@ -57,7 +57,7 @@ class PriceSchedulerClient:
         self.price_manager_client = price_manager_client
         self.db = db
 
-    def generate_monthly_tasks(self, entity_id: Optional[UUID] = None, min_date: Optional[datetime] = None) -> Iterable[TaskRecord]:
+    def generate_monthly_tasks(self, entity_id: Optional[UUID] = None, min_date: Optional[datetime] = None, max_open_tasks: int = 2000) -> Iterable[TaskRecord]:
         created: List[TaskRecord] = []
 
         entities = self.price_manager_client.query_entities(
@@ -70,7 +70,7 @@ class PriceSchedulerClient:
             # count OPEN tasks for the entity
             open_count = self.db.count_tasks(entity.id, "OPEN")
             # quit if there are already 1 or more OPEN tasks for the entity to avoid creating too many tasks for the same entity
-            if open_count >= 1:
+            if open_count >= max_open_tasks:
                 print(f"Entity {entity.name} ({entity.code}) - {entity.id} has {open_count} OPEN tasks, skipping")
                 continue
 
@@ -87,7 +87,11 @@ class PriceSchedulerClient:
 
             print(f"Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing prices starting from {scan.date()} back to {stop_date}")
 
+            open_task_count = 0
             while True:
+                # don't create more than max open tasks
+                if open_task_count >= max_open_tasks:
+                    break
                 # get date range for the month to scan
                 # start date is inclusive, end date is exclusive
                 month_start, month_end = _month_range_for(scan)
@@ -99,7 +103,7 @@ class PriceSchedulerClient:
                     break
 
                 # get the list of prices for the month
-                prices = self.price_manager_client.query_prices(entity.id, month_start, month_end)
+                prices = self.price_manager_client.query_prices(entity.id, month_start, month_end, page = 0, size = 31)
 
                 # check if there are missing prices for the month
                 if _month_has_missing_prices(prices, month_start, month_end, entity.has_weekend):
@@ -110,16 +114,16 @@ class PriceSchedulerClient:
                     current_task = self.db.get_task_for_range(entity.id, month_start, month_end)
 
                     if not current_task:
-                        print(f"No existing task for month {month_start.date()} to {month_end.date()}, creating new task")
+                        print(f"No existing task for month {month_start.date()} to {month_end.date()}, creating new task and continuing")
                         # create a new task for the entity and month range
                         tr = self.db.create_new_task(entity.id, month_start, month_end)
                         created.append(tr)
-                        break
+                        open_task_count += 1
                     else:
                         if current_task.status == "OPEN":
-                            print(f"Existing OPEN task {current_task.id} for month {month_start.date()} to {month_end.date()}, skipping")
+                            print(f"Existing OPEN task {current_task.id} for month {month_start.date()} to {month_end.date()}, continuing scan")
                             # if there is already an OPEN task for the entity and month range, skip creating a new task
-                            break
+                            open_task_count += 1
                         else:
                             print(f"Existing task {current_task.id} for month {month_start.date()} to {month_end.date()} is not OPEN, continuing scan")
                 else:
@@ -129,5 +133,7 @@ class PriceSchedulerClient:
                 # continue scanning previous months to find the previous one with no task or an OPEN task
                 scan = _prev_month(scan)
 
-
         return created
+
+    def get_tasks(self, status: Optional[str], page: int = 0, size: int = 10) -> Iterable[TaskRecord]:
+        return self.db.query_tasks(status, page, size)

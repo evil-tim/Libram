@@ -16,6 +16,7 @@ class BaseDatasource(ABC):
         self.config = config or {}
 
     @abstractmethod
+    # TODO: make start and end optional for datasources that don't support historical fetching
     def fetch_prices(self, entity: dict, start: datetime, end: datetime) -> Iterable[PriceRecord]:
         """Fetch price data for `entity` between `start` and `end`.
 
