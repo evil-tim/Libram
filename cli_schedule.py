@@ -29,11 +29,28 @@ def main():
     price_manager_client = PriceManagerClient(db)
     price_scheduler_client = PriceSchedulerClient(price_manager_client, db)
 
-    created_tasks = price_scheduler_client.generate_monthly_tasks(
+    all_created_tasks = []
+
+    # Generate daily tasks
+    daily_tasks = price_scheduler_client.generate_daily_tasks(
+        entity_id=args.entity_id if args.entity_id else None
+    )
+    all_created_tasks.extend(daily_tasks)
+
+    # Generate weekly tasks
+    weekly_tasks = price_scheduler_client.generate_weekly_tasks(
+        entity_id=args.entity_id if args.entity_id else None
+    )
+    all_created_tasks.extend(weekly_tasks)
+
+    # Generate monthly tasks
+    monthly_tasks = price_scheduler_client.generate_monthly_tasks(
         entity_id=args.entity_id if args.entity_id else None,
         min_date=datetime.strptime(args.min_date, "%Y-%m-%dT%H:%M:%S") if args.min_date else None
     )
-    for task in created_tasks:
+    all_created_tasks.extend(monthly_tasks)
+
+    for task in all_created_tasks:
         print(f"Created task {task.id} for entity {task.entity_id} from {task.timestamp_start} to {task.timestamp_end} with status {task.status}")
 
 if __name__ == "__main__":
