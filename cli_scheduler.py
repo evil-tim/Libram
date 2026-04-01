@@ -20,6 +20,7 @@ def main():
     max_retries = os.getenv("LIBRAM_SCHEDULER_MAX_RETRIES")
     retry_delay_seconds = os.getenv("LIBRAM_SCHEDULER_RETRY_DELAY_SECONDS")
     thread_count = os.getenv("LIBRAM_SCHEDULER_THREADS")
+    max_tasks_per_datasource = os.getenv("LIBRAM_SCHEDULER_MAX_TASKS_PER_DATASOURCE")
     poll_interval = os.getenv("LIBRAM_SCHEDULER_POLL_INTERVAL_SECONDS")
     jitter = os.getenv("LIBRAM_SCHEDULER_POLL_JITTER_SECONDS")
 
@@ -29,6 +30,8 @@ def main():
         args["retry_delay_seconds"] = int(retry_delay_seconds)
     if thread_count:
         args["thread_count"] = int(thread_count)
+    if max_tasks_per_datasource:
+        args["max_tasks_per_datasource"] = int(max_tasks_per_datasource)
     if poll_interval:
         args["poll_interval"] = int(poll_interval)
     if jitter:

@@ -309,9 +309,17 @@ class Database:
             )
         return out
 
-    def find_and_lock_next_task(self, retry_delay_seconds: int) -> Optional[TaskRecord]:
+    def find_and_lock_next_task(self, retry_delay_seconds: int, poll_interval: int, max_tasks_per_datasource: int) -> Optional[TaskRecord]:
         """Find the next task that is ready to be executed
-        (status OPEN, and next_run_at <= now), and atomically update its status to IN_PROGRESS and increment retry_count.
+        * status should be OPEN
+        * next_run_at should be in the past (i.e. task is ready to run)
+        * should be for an entity having a datasource where the number of tasks that were
+        executed with the poll_interval seconds is less than max_tasks_per_datasource (to avoid overwhelming a datasource
+        with too many concurrent tasks)
+
+        If such a task is found, lock it by setting status to IN_PROGRESS and incrementing retry_count, update next_run_at to
+        now() + retry_delay_seconds * 3^(pre_increment_retry_count + 1) (exponential backoff with +1 to avoid zero backoff),
+        and return the TaskRecord for the locked task.
 
         Returns the TaskRecord for the locked task, or None if no task is ready.
         """
@@ -321,6 +329,12 @@ class Database:
                 SELECT id FROM task
                 WHERE status = 'OPEN'
                     AND next_run_at <= now()
+                    AND (SELECT COUNT(*) FROM task t2
+                    JOIN entity e ON t2.entity_id = e.id
+                    JOIN datasource d ON e.datasource_id = d.id
+                    WHERE t2.updated_at >= now() - (interval '1 second' * :poll_interval)
+                    AND d.id = (SELECT datasource_id FROM entity WHERE id = task.entity_id)
+                ) < :max_tasks_per_datasource
                 ORDER BY created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
@@ -329,14 +343,15 @@ class Database:
             SET
                 status = 'IN_PROGRESS',
                 retry_count = retry_count + 1,
-                next_run_at = now() + (interval '1 second' * (:retry_delay_seconds * power(3, retry_count + 1)))
+                next_run_at = now() + (interval '1 second' * (:retry_delay_seconds * power(3, retry_count + 1))),
+                updated_at = now()
             FROM next_task
             WHERE task.id = next_task.id
             RETURNING task.*
             """
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {"retry_delay_seconds": retry_delay_seconds})
+            res = conn.execute(q, {"retry_delay_seconds": retry_delay_seconds, "poll_interval": poll_interval, "max_tasks_per_datasource": max_tasks_per_datasource})
             row = res.mappings().first()
             if not row:
                 return None
@@ -366,7 +381,8 @@ class Database:
         q = text(
             """
             UPDATE task
-            SET status = CASE WHEN retry_count >= :max_retries THEN 'FAILED' ELSE 'OPEN' END
+            SET status = CASE WHEN retry_count >= :max_retries THEN 'FAILED' ELSE 'OPEN' END,
+                updated_at = now()
             WHERE id = :task_id
             """
         )
@@ -378,7 +394,8 @@ class Database:
         q = text(
             """
             UPDATE task
-            SET status = 'COMPLETED'
+            SET status = 'COMPLETED',
+                updated_at = now()
             WHERE id = :task_id
             """
         )

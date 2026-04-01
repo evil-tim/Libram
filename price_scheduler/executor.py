@@ -26,7 +26,8 @@ class PriceSchedulerExecutor:
         db: Database,
         max_retries: int = 5,
         retry_delay_seconds: int = 300,
-        thread_count: int = 4,
+        thread_count: int = 8,
+        max_tasks_per_datasource: int = 4,
         poll_interval: int = 60,
         jitter: int = 30,
     ):
@@ -35,6 +36,7 @@ class PriceSchedulerExecutor:
         self.max_retries = max_retries
         self.retry_delay_seconds = retry_delay_seconds
         self.thread_count = thread_count
+        self.max_tasks_per_datasource = max_tasks_per_datasource
         self.poll_interval = poll_interval
         self.jitter = jitter
         self.stop_event = Event()
@@ -92,7 +94,7 @@ class PriceSchedulerExecutor:
 
     def execute_task(self) -> None:
         # fetch the next task to execute
-        task = self.db.find_and_lock_next_task(self.retry_delay_seconds)
+        task = self.db.find_and_lock_next_task(self.retry_delay_seconds, self.poll_interval, self.max_tasks_per_datasource)
         if not task:
             print("No tasks to execute")
             return

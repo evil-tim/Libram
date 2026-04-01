@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS task (
     status text NOT NULL DEFAULT 'OPEN',
     retry_count integer NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
     next_run_at timestamptz NOT NULL DEFAULT now(),
     -- constraint on status to be one of OPEN, IN_PROGRESS, COMPLETED, FAILED
     CHECK (status IN ('OPEN', 'IN_PROGRESS', 'COMPLETED', 'FAILED')
