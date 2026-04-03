@@ -84,7 +84,7 @@ class RestJSONDatasource(BaseDatasource):
         end: datetime,
         config: dict,
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        """Build the query parameters and request body params for the request based on the entity and time range
+        """Build the url, query parameters and request body params for the request based on the entity and time range
         as well as the current instance's config.
         """
         raise NotImplementedError()

@@ -20,8 +20,8 @@ class SLAMCFundDataSource(RestJSONDatasource):
         config: dict,
         ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         # For SLAMC, we need to send the fund code and date range as query parameters.
-        dateFrom = start.strftime("%Y-%m-%dT16:00:00.000Z")
-        dateTo = end.strftime("%Y-%m-%dT16:00:00.000Z")
+        date_from = start.strftime("%Y-%m-%dT16:00:00.000Z")
+        date_to = end.strftime("%Y-%m-%dT16:00:00.000Z")
         return (
             None,
             {
@@ -30,8 +30,8 @@ class SLAMCFundDataSource(RestJSONDatasource):
             },
             {
                 "fundCode": entity.get("code"),
-                "dateFrom": dateFrom,
-                "dateTo": dateTo,
+                "dateFrom": date_from,
+                "dateTo": date_to,
             })
 
 
