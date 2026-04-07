@@ -1,5 +1,5 @@
 import importlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable, Optional
 from uuid import UUID
 
@@ -28,7 +28,6 @@ def _load_datasource(implementation: str, config: dict) -> BaseDatasource:
         raise TypeError("Datasource implementation must subclass BaseDatasource")
     return inst
 
-
 class PriceManagerClient:
     """High-level client to fetch/store/query financial data.
 
@@ -52,6 +51,10 @@ class PriceManagerClient:
         # if entity is still not found, raise an error
         if not entity:
             raise ValueError("entity not found")
+
+        # if prices already exist for entity and date range, skip fetch and return 0
+        if self._prices_exist(entity, start, end):
+            return 0
 
         # if entity's datasource_id is not set or is not a UUID, raise an error
         datasource_id = entity.get("datasource_id")
@@ -98,3 +101,41 @@ class PriceManagerClient:
 
         # ensure entity id is a UUID instance
         return self.db.query_prices(entity_id, start, end, page, size)
+
+    def _prices_exist(self, entity: dict[str, object], start: datetime, end: datetime) -> bool:
+        entity_id = entity.get("id")
+        if not entity_id:
+            raise ValueError("entity must have an id")
+
+        # ensure entity id is a UUID instance
+        if not isinstance(entity_id, UUID):
+            entity_id = UUID(str(entity_id))
+
+        # get expected number of price records based on entity frequency and date range
+        frequency = entity.get("frequency")
+        if not frequency or not isinstance(frequency, str):
+            raise ValueError("entity must have a frequency")
+        # continuous frequency means we can't determine expected count, so always fetch
+        if frequency == "CONTINUOUS":
+            return False
+        has_weekend = bool(entity.get("has_weekend", False))
+
+        expected_count = self._expected_price_count(frequency, has_weekend, start, end)
+        if expected_count is None:
+            raise ValueError(f"unsupported frequency: {frequency}")
+
+        # query actual count of price records for entity and date range
+        actual_count = self.db.count_prices(entity_id, start, end)
+        return actual_count >= expected_count
+
+    def _expected_price_count(self, frequency: str, has_weekend: bool, start: datetime, end: datetime) -> Optional[int]:
+        if frequency == "DAILY":
+            count = 0
+            current = start
+            while current <= end:
+                if has_weekend or current.weekday() < 5:
+                    count += 1
+                current += timedelta(days=1)
+            return count
+        # TODO: Add support for other frequencies as needed
+        return None

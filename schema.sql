@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS entity (
     datasource_id uuid NOT NULL REFERENCES datasource(id),
     config jsonb NOT NULL DEFAULT '{}'::jsonb,
     type text NOT NULL, -- e.g. stock, crypto, commodity, currency, etc.
-    frequency text NOT NULL, -- e.g. daily, hourly, etc.
+    frequency text NOT NULL, -- e.g. DAILY, HOURLY, CONTINUOUS, etc.
     has_weekend boolean NOT NULL DEFAULT false, -- whether the entity has price data on weekends (e.g. crypto vs stock)
     timezone text NOT NULL, -- timezone for the entity's price data
     min_timestamp timestamptz, -- earliest timestamp for which price data is available for this entity

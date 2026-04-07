@@ -208,6 +208,25 @@ class Database:
             )
         return out
 
+    def count_prices(self, entity_id: UUID, start: datetime, end: datetime) -> int:
+        """Count price rows covering the range. Range is inclusive of start and exclusive of end (i.e. [start, end))."""
+        q = text(
+            """
+            SELECT COUNT(*) as c FROM price
+            WHERE entity_id = :entity_id
+            AND (
+                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
+                OR
+                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end >= :start)
+            )
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            row = res.mappings().first()
+            count = row.get("c") if row else None
+            return int(count) if count is not None else 0
+
     # task methods
     def count_tasks(self, entity_id: UUID, status: str) -> int:
         """Return the number of tasks for an entity with the given status."""
