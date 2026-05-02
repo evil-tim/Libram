@@ -182,7 +182,7 @@ class Database:
             AND (
                 (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
                 OR
-                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end >= :start)
+                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end > :start)
             )
             ORDER BY COALESCE(timestamp, timestamp_start)
             LIMIT :limit OFFSET :offset

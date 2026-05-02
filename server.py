@@ -1,40 +1,55 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Query
 from fastapi.concurrency import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
+from fastmcp import FastMCP
+from fastmcp.utilities.lifespan import combine_lifespans
 
 from libram_database.db import Database
 from price_management.client import PriceManagerClient
 from price_scheduler.client import PriceSchedulerClient
 
 
-def startup(_app: FastAPI):
-    print("Starting up server...")
-
-    # Load environment variables from .env file
+async def get_db_string() -> str:
     load_dotenv()
     db_string = os.getenv("LIBRAM_DB")
     if not db_string:
         raise RuntimeError("LIBRAM_DB environment variable not set")
+    return db_string
 
-    # Initialize objects
-    db = Database(db_string)
-    price_manager = PriceManagerClient(db)
-    scheduler = PriceSchedulerClient(price_manager, db)
 
-    # Store objects in app state for access in route handlers
-    _app.state.db = db
-    _app.state.price_manager = price_manager
-    _app.state.scheduler = scheduler
+async def get_database(db_string: str = Depends(get_db_string)) -> Database:
+    return Database(db_string)
+
+
+async def get_price_manager_client(
+    db: Database = Depends(get_database),
+) -> PriceManagerClient:
+    return PriceManagerClient(db)
+
+
+async def get_scheduler_client(
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    db: Database = Depends(get_database),
+) -> PriceSchedulerClient:
+    return PriceSchedulerClient(price_manager, db)
+
+
+def startup(_app: FastAPI):
+    # noop
+    print("Starting up server...")
 
 
 def shutdown(_app: FastAPI):
     # noop
     print("Shutting down server...")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -42,58 +57,106 @@ async def lifespan(_app: FastAPI):
     yield
     shutdown(_app=_app)
 
-app = FastAPI(lifespan=lifespan)
+
+app = FastAPI(lifespan=lifespan, name="Libram Price Feed API", version="1.0.0")
+
 
 # entity endpoints
-@app.get("/api/v1/entities")
-async def list_entities(entity_id: Optional[UUID] = None, entity_code: Optional[str] = None, entity_name: Optional[str] = None):
-    price_manager = getattr(app.state, "price_manager", None)
-    if not price_manager and not isinstance(price_manager, PriceManagerClient):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Price manager not initialized")
-
+@app.get(
+    "/api/v1/entities",
+    operation_id="list_available_entities",
+    description="List available entities currently being tracked. Can be filtered by entity_id, entity_code, or partial match entity_name.",
+)
+async def list_entities(
+    entity_id: Annotated[
+        Optional[UUID], Query(description="Filter by entity UUID")
+    ] = None,
+    entity_code: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by entity code. This can be stock ticker, fund code, etc."
+        ),
+    ] = None,
+    entity_name: Annotated[
+        Optional[str], Query(description="Filter by partial entity name")
+    ] = None,
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
     return price_manager.query_entities(entity_id, entity_code, entity_name, None)
 
-# price endpoints
-@app.get("/api/v1/prices")
-async def list_prices(entity_id: UUID, start: str, end: str, page: int = 0, size: int = 10):
-    price_manager = getattr(app.state, "price_manager", None)
-    if not price_manager and not isinstance(price_manager, PriceManagerClient):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Price manager not initialized")
 
-    start_dt = datetime.strptime(start, "%Y-%m-%dT%H:%M:%S")
-    end_dt = datetime.strptime(end, "%Y-%m-%dT%H:%M:%S")
+# price endpoints
+@app.get(
+    "/api/v1/prices",
+    operation_id="list_prices_for_entity",
+    description="List price records for an entity within a date range ordered by date ascending. Can be single price at timestamp or OHLC within date range, depending on the entity. Supports pagination with page and size query parameters.",
+)
+async def list_prices(
+    entity_id: Annotated[UUID, Query(description="Select by entity UUID")],
+    start: Annotated[
+        str,
+        Query(
+            description="Start date for the date range, inclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    end: Annotated[
+        str,
+        Query(
+            description="End date for the date range, exclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    page: Annotated[
+        int, Query(description="Page number for pagination, zero-indexed, default is 0")
+    ] = 0,
+    size: Annotated[
+        int, Query(description="Number of items per page, default is 10")
+    ] = 10,
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    entity = price_manager.db.get_entity_by_id_raw(entity_id)
+    if not entity:
+        raise ValueError("entity not found")
+    timezone = entity.get("timezone")
+    if not timezone or not isinstance(timezone, str):
+        timezone = "UTC"  # default to UTC if timezone not specified
+
+    # breakdown the start date string into components to construct a timezone-aware datetime in the entity's timezone
+    start_dt = convert_to_timezone_aware(start, timezone)
+    end_dt = convert_to_timezone_aware(end, timezone)
+
     return price_manager.query_prices(entity_id, start_dt, end_dt, page, size)
 
-@app.post("/api/v1/prices/fetch_and_store")
-#TODO: make start and end optional for datasources that don't support historical fetching
-async def fetch_and_store(entity_code: Optional[str], entity_id: Optional[UUID], start: str, end: str):
-    price_manager = getattr(app.state, "price_manager", None)
-    if not price_manager and not isinstance(price_manager, PriceManagerClient):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Price manager not initialized")
 
-    inserted_count = price_manager.fetch_and_store(
-        entity_id,
-        entity_code,
-        datetime.strptime(start, "%Y-%m-%dT%H:%M:%S"),
-        datetime.strptime(end, "%Y-%m-%dT%H:%M:%S"))
-    return {"inserted_count": inserted_count}
+def convert_to_timezone_aware(date_str: str, timezone_str: str) -> datetime:
+    # parse the date string into components
+    dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+    year = dt.year
+    month = dt.month
+    day = dt.day
+    hour = dt.hour
+    minute = dt.minute
+    second = dt.second
+    return datetime(
+        year, month, day, hour, minute, second, tzinfo=ZoneInfo(timezone_str)
+    )
 
-# task endpoints
-@app.get("/api/v1/tasks")
-async def list_tasks(task_status: Optional[str], page: int = 0, size: int = 10):
-    scheduler = getattr(app.state, "scheduler", None)
-    if not scheduler and not isinstance(scheduler, PriceSchedulerClient):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scheduler not initialized")
 
-    return scheduler.get_tasks(task_status, page, size)
+mcp = FastMCP.from_fastapi(app=app, name="Libram Price Feed MCP", version="1.0.0")
+mcp_app = mcp.http_app(path="/mcp", stateless_http=True, transport="http")
 
-@app.post("/api/v1/tasks/generate")
-async def generate_tasks(entity_id: Optional[UUID] = None, min_date: Optional[str] = None):
-    scheduler = getattr(app.state, "scheduler", None)
-    if not scheduler and not isinstance(scheduler, PriceSchedulerClient):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scheduler not initialized")
+combined_app = FastAPI(
+    name="Libram Price Feed API with MCP",
+    routes=[
+        *mcp_app.routes,  # MCP routes
+        *app.routes,  # Original API routes
+    ],
+    lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
+)
 
-    min_date_dt = datetime.strptime(min_date, "%Y-%m-%dT%H:%M:%S") if min_date else None
-    return scheduler.generate_monthly_tasks(entity_id, min_date_dt)
-
-# TODO: add endpoint to trigger processing of a task
+combined_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

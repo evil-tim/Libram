@@ -7,3 +7,6 @@ psycopg2-binary>=2.9
 
 # REST Api
 fastapi[standard]>=0.133.0
+
+# MCP
+fastmcp>=3.2.4

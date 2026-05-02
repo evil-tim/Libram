@@ -1,6 +1,6 @@
 """Coindesk OHLC DataSource implementation.
 
-This datasource fetches forex price data from the Coindesk API.
+This datasource fetches price data from the Coindesk API.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
 from typing import Any, Dict, Optional, Tuple, Union, Iterable

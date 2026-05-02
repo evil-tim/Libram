@@ -1,6 +1,6 @@
 """PSE Edge Fund DataSource implementation.
 
-This datasource fetches fund net asset value (NAV) data from the BPI page.
+This datasource fetches fund OHLC data from the PSE Edge page.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
 from typing import Any, Dict, Optional, Tuple, Union, Iterable
