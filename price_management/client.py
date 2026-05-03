@@ -145,13 +145,14 @@ class PriceManagerClient:
 
         # query actual count of price records for entity and date range
         actual_count = self.db.count_prices(entity_id, start, end)
+        print(f"Expected price count: {expected_count}, actual price count: {actual_count} for entity_id {entity_id} and date range {start} to {end}")
         return actual_count >= expected_count
 
     def _expected_price_count(self, frequency: str, has_weekend: bool, start: datetime, end: datetime) -> Optional[int]:
         if frequency == "DAILY":
             count = 0
             current = start
-            while current <= end:
+            while current < end:
                 if has_weekend or current.weekday() < 5:
                     count += 1
                 current += timedelta(days=1)

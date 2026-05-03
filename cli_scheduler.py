@@ -1,4 +1,4 @@
-""" Run PriceSchedulerExecutor to process tasks """
+"""Run PriceSchedulerExecutor to process tasks"""
 
 import os
 
@@ -39,13 +39,11 @@ def main():
 
     db = Database(db_string)
     price_manager_client = PriceManagerClient(db)
-    price_scheduler_executor = PriceSchedulerExecutor(
-        price_manager_client,
-        db,
-        **args)
+    price_scheduler_executor = PriceSchedulerExecutor(price_manager_client, db, **args)
 
     price_scheduler_executor.setup_signal_handlers()
     price_scheduler_executor.start()
+
 
 if __name__ == "__main__":
     main()
