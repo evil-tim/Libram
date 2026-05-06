@@ -1,0 +1,24 @@
+version: "3"
+
+services:
+  libram-api-mcp:
+    build:
+      context: .
+      network: host
+    image: libram-api-mcp:latest
+    environment:
+      - HOST:0.0.0.0
+      - LIBRAM_DB
+      - LIBRAM_SCHEDULER_MAX_RETRIES
+      - LIBRAM_SCHEDULER_RETRY_DELAY_SECONDS
+      - LIBRAM_SCHEDULER_THREADS
+      - LIBRAM_SCHEDULER_MAX_TASKS_PER_DATASOURCE
+      - LIBRAM_SCHEDULER_POLL_INTERVAL_SECONDS
+      - LIBRAM_SCHEDULER_POLL_JITTER_SECONDS
+    cpus: 0.5
+    mem_limit: 512mb
+    network_mode: host
+    user: 1000:1000
+    privileged: false
+    security_opt:
+      - 'no-new-privileges:true'

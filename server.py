@@ -10,11 +10,16 @@ from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
 from fastmcp.utilities.lifespan import combine_lifespans
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from libram_database.db import Database
 from price_management.client import PriceManagerClient
 from price_scheduler.client import PriceSchedulerClient
 
+from cli_schedule import build_all_tasks
+
+""" Dependencies """
 
 async def get_db_string() -> str:
     load_dotenv()
@@ -40,6 +45,7 @@ async def get_scheduler_client(
 ) -> PriceSchedulerClient:
     return PriceSchedulerClient(price_manager, db)
 
+""" FastAPI lifecycle """
 
 def startup(_app: FastAPI):
     # noop
@@ -57,6 +63,7 @@ async def lifespan(_app: FastAPI):
     yield
     shutdown(_app=_app)
 
+""" FastAPI app and routes """
 
 app = FastAPI(lifespan=lifespan, name="Libram Price Feed API", version="1.0.0")
 
@@ -141,6 +148,8 @@ def convert_to_timezone_aware(date_str: str, timezone_str: str) -> datetime:
     )
 
 
+""" MCP setup to expose PriceSchedulerClient methods as MCP endpoints under /mcp path with stateless HTTP transport """
+
 mcp = FastMCP.from_fastapi(app=app, name="Libram Price Feed MCP", version="1.0.0")
 mcp_app = mcp.http_app(path="/mcp", stateless_http=True, transport="http")
 
@@ -160,3 +169,15 @@ combined_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+""" Scheduler setup to run build_all_tasks every day at 8:00 and 20:00 """
+
+
+def build_all_tasks_no_args():
+    build_all_tasks(None)
+
+
+scheduler = BackgroundScheduler()
+# Schedule the build_all_tasks function to run at 8:00 and 20:00 every day
+scheduler.add_job(build_all_tasks, CronTrigger(hour="8,20", minute="0"))
+scheduler.start()
