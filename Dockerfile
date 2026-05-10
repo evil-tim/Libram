@@ -2,7 +2,7 @@
 FROM python:3.13-slim
 
 # update system
-RUN apt-get update
+RUN apt-get update \
     && apt-get install -y supervisor \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,7 +25,7 @@ RUN ln -s supervisord.conf /etc/supervisord.conf
 RUN uv sync
 
 # set permissions for mcp user
-RUN chown -R mcp:mcp /app && chmod +x entrypoint.sh
+RUN chown -R mcp:mcp /app && chmod +x entrypoint_server.sh && chmod +x entrypoint_scheduler.sh
 
 # switch to non-root user
 USER mcp
