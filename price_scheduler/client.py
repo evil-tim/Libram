@@ -31,7 +31,6 @@ def _month_has_missing_prices(prices: Iterable[PriceRecord], start: datetime, en
         if ts is None:
             continue
         present.add(ts.date())
-    print(f"Present price dates: {present}")
     d = start.date()
     while d < end.date():
         if has_weekend:
@@ -39,7 +38,6 @@ def _month_has_missing_prices(prices: Iterable[PriceRecord], start: datetime, en
         else:
             expect_date_present = d.weekday() < 5
 
-        print(f"Checking date {d} - expect present: {expect_date_present}, present: {d in present}")
         if expect_date_present and d not in present:
             return True
 
@@ -102,7 +100,6 @@ class PriceSchedulerClient:
             open_count = self.db.count_tasks(entity.id, "OPEN")
             # quit if there are already 1 or more OPEN tasks for the entity to avoid creating too many tasks for the same entity
             if open_count >= max_open_tasks:
-                print(f"Entity {entity.name} ({entity.code}) - {entity.id} has {open_count} OPEN tasks, skipping")
                 continue
 
             # get the previous month range as a starting point for scanning
@@ -127,8 +124,6 @@ class PriceSchedulerClient:
                 # start date is inclusive, end date is exclusive
                 month_start, month_end = _month_range_for(scan)
 
-                print(f"Scanning month {month_start.date()} to {month_end.date()}")
-
                 # stop date is inclusive - quit if the scan window is now outside the stop date
                 if month_end.date() < stop_date:
                     break
@@ -138,8 +133,6 @@ class PriceSchedulerClient:
 
                 # check if there are missing prices for the month
                 if _month_has_missing_prices(prices, month_start, month_end, entity.has_weekend):
-                    print(f"Month {month_start.date()} to {month_end.date()} has missing prices, checking for existing tasks")
-
                     # check if there is already a task for the entity and month range
 
                     current_task = self.db.get_task_for_range(entity.id, month_start, month_end)
@@ -152,13 +145,8 @@ class PriceSchedulerClient:
                         open_task_count += 1
                     else:
                         if current_task.status == "OPEN":
-                            print(f"Existing OPEN task {current_task.id} for month {month_start.date()} to {month_end.date()}, continuing scan")
                             # if there is already an OPEN task for the entity and month range, skip creating a new task
                             open_task_count += 1
-                        else:
-                            print(f"Existing task {current_task.id} for month {month_start.date()} to {month_end.date()} is not OPEN, continuing scan")
-                else:
-                    print(f"Month {month_start.date()} to {month_end.date()} has no missing prices, continuing scan")
                 # if there are no missing prices for the month
                 # OR if there is a task for the month range but it's not OPEN
                 # continue scanning previous months to find the previous one with no task or an OPEN task
@@ -180,7 +168,6 @@ class PriceSchedulerClient:
             # count OPEN tasks for the entity
             open_count = self.db.count_tasks(entity.id, "OPEN")
             if open_count >= max_open_tasks:
-                print(f"Entity {entity.name} ({entity.code}) - {entity.id} has {open_count} OPEN tasks, skipping")
                 continue
 
             # get the previous week as a starting point for scanning
@@ -205,15 +192,11 @@ class PriceSchedulerClient:
                     scan = scan - timedelta(days=1)
                     continue
 
-                print(f"Scanning day {day_start.date()}")
-
                 # get the list of prices for the day
                 prices = self.price_manager_client.query_prices(entity.id, day_start, day_end, page=0, size=31)
 
                 # check if there are missing prices for the day
                 if _day_has_missing_prices(prices, day_start, day_end, entity.has_weekend):
-                    print(f"Day {day_start.date()} has missing prices, checking for existing task")
-
                     current_task = self.db.get_task_for_range(entity.id, day_start, day_end)
 
                     if not current_task:
@@ -223,11 +206,7 @@ class PriceSchedulerClient:
                         open_task_count += 1
                     else:
                         if current_task.status == "OPEN":
-                            print(f"Existing OPEN task {current_task.id} for day {day_start.date()}")
                             open_task_count += 1
-                else:
-                    print(f"Day {day_start.date()} has no missing prices")
-
                 scan = scan - timedelta(days=1)
 
         return created
@@ -246,7 +225,6 @@ class PriceSchedulerClient:
             # count OPEN tasks for the entity
             open_count = self.db.count_tasks(entity.id, "OPEN")
             if open_count >= max_open_tasks:
-                print(f"Entity {entity.name} ({entity.code}) - {entity.id} has {open_count} OPEN tasks, skipping")
                 continue
 
             # get the previous week range as a starting point for scanning
@@ -268,8 +246,6 @@ class PriceSchedulerClient:
                 # get date range for the week to scan
                 week_start, week_end = _week_range_for(scan)
 
-                print(f"Scanning week {week_start.date()} to {week_end.date()}")
-
                 # stop date is inclusive - quit if the scan window is now outside the stop date
                 if week_end.date() < stop_date:
                     break
@@ -279,8 +255,6 @@ class PriceSchedulerClient:
 
                 # check if there are missing prices for the week
                 if _month_has_missing_prices(prices, week_start, week_end, entity.has_weekend):
-                    print(f"Week {week_start.date()} to {week_end.date()} has missing prices, checking for existing task")
-
                     current_task = self.db.get_task_for_range(entity.id, week_start, week_end)
 
                     if not current_task:
@@ -290,12 +264,7 @@ class PriceSchedulerClient:
                         open_task_count += 1
                     else:
                         if current_task.status == "OPEN":
-                            print(f"Existing OPEN task {current_task.id} for week {week_start.date()} to {week_end.date()}")
                             open_task_count += 1
-                        else:
-                            print(f"Existing task {current_task.id} for week {week_start.date()} to {week_end.date()} is not OPEN")
-                else:
-                    print(f"Week {week_start.date()} to {week_end.date()} has no missing prices")
 
                 scan = _prev_week(scan)
 

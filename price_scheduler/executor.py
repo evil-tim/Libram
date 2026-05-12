@@ -95,7 +95,6 @@ class PriceSchedulerExecutor:
         # fetch the next task to execute
         task = self.db.find_and_lock_next_task(self.retry_delay_seconds, self.poll_interval, self.max_tasks_per_datasource)
         if not task:
-            # print("No tasks to execute")
             return
 
         if not task.timestamp_start:

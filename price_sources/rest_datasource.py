@@ -67,7 +67,6 @@ class RestJSONDatasource(BaseDatasource):
             json=request_body,
             timeout=self.timeout,
         )
-        # print(resp.content)
 
         resp.raise_for_status()
 
@@ -119,10 +118,6 @@ class RestJSONDatasource(BaseDatasource):
             self.headers,
             entity=entity,
             config=self.config)
-
-        # print(url)
-        # print(request_params)
-        # print(request_body)
 
         data = self.fetch(
             url=url,

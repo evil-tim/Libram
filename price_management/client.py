@@ -52,6 +52,11 @@ class PriceManagerClient:
         if not entity:
             raise ValueError("entity not found")
 
+        # ensure entity id is a UUID instance
+        db_entity_id = entity["id"]
+        if not isinstance(db_entity_id, UUID):
+            db_entity_id = UUID(str(db_entity_id))
+
         # if prices already exist for entity and date range, skip fetch and return 0
         if self._prices_exist(entity, start, end):
             return 0
@@ -92,19 +97,14 @@ class PriceManagerClient:
             if price.timestamp and price.timestamp > now:
                 # single price record
                 # discard price data that is from today or in the future
-                print(f"Discarding price record with timestamp {price.timestamp} as it is from today or in the future")
+                print(f"Discarding price record with timestamp {price.timestamp} for entity_id {db_entity_id} as it is from today or in the future for date range {start} to {end}")
                 continue
             elif price.timestamp_start and price.timestamp_end and (price.timestamp_start > now or price.timestamp_end > now):
                 # OHLC record
                 # discard price data that is from today or in the future based on start and end timestamps
-                print(f"Discarding price record with start timestamp {price.timestamp_start} and end timestamp {price.timestamp_end} as it is from today or in the future")
+                print(f"Discarding price record with start timestamp {price.timestamp_start} and end timestamp {price.timestamp_end} for entity_id {db_entity_id} as it is from today or in the future for date range {start} to {end}")
                 continue
             cleaned_prices.append(price)
-
-        # ensure entity id is a UUID instance
-        db_entity_id = entity["id"]
-        if not isinstance(db_entity_id, UUID):
-            db_entity_id = UUID(str(db_entity_id))
 
         # save prices to database and return number of records inserted
         print(f"Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
