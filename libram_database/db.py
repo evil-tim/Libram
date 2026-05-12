@@ -215,9 +215,18 @@ class Database:
             SELECT COUNT(*) as c FROM price
             WHERE entity_id = :entity_id
             AND (
-                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
+                    (
+                    timestamp IS NOT NULL
+                    AND timestamp >= :start
+                    AND timestamp < :end
+                    )
                 OR
-                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end >= :start)
+                    (
+                    timestamp_start IS NOT NULL
+                    AND timestamp_end IS NOT NULL
+                    AND timestamp_end >= :start
+                    AND timestamp_end <= :end
+                    )
             )
             """
         )

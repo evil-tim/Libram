@@ -5,7 +5,6 @@ import random
 import signal
 
 from threading import Event, Thread
-from typing import Optional
 
 from libram_database.db import Database
 from price_management import PriceManagerClient
@@ -96,7 +95,7 @@ class PriceSchedulerExecutor:
         # fetch the next task to execute
         task = self.db.find_and_lock_next_task(self.retry_delay_seconds, self.poll_interval, self.max_tasks_per_datasource)
         if not task:
-            print("No tasks to execute")
+            # print("No tasks to execute")
             return
 
         if not task.timestamp_start:

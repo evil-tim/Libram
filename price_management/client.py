@@ -107,6 +107,7 @@ class PriceManagerClient:
             db_entity_id = UUID(str(db_entity_id))
 
         # save prices to database and return number of records inserted
+        print(f"Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
         inserted = self.db.save_prices(db_entity_id, cleaned_prices)
         return inserted
 
