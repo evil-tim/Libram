@@ -97,17 +97,17 @@ class PriceManagerClient:
             if price.timestamp and price.timestamp > now:
                 # single price record
                 # discard price data that is from today or in the future
-                print(f"Discarding price record with timestamp {price.timestamp} for entity_id {db_entity_id} as it is from today or in the future for date range {start} to {end}")
+                print(f"{datetime.now().isoformat()} : Discarding price record with timestamp {price.timestamp} for entity_id {db_entity_id} as it is from today or in the future for date range {start} to {end}")
                 continue
             elif price.timestamp_start and price.timestamp_end and (price.timestamp_start > now or price.timestamp_end > now):
                 # OHLC record
                 # discard price data that is from today or in the future based on start and end timestamps
-                print(f"Discarding price record with start timestamp {price.timestamp_start} and end timestamp {price.timestamp_end} for entity_id {db_entity_id} as it is from today or in the future for date range {start} to {end}")
+                print(f"{datetime.now().isoformat()} : Discarding price record with start timestamp {price.timestamp_start} and end timestamp {price.timestamp_end} for entity_id {db_entity_id} as it is from today or in the future for date range {start} to {end}")
                 continue
             cleaned_prices.append(price)
 
         # save prices to database and return number of records inserted
-        print(f"Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
+        print(f"{datetime.now().isoformat()} : Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
         inserted = self.db.save_prices(db_entity_id, cleaned_prices)
         return inserted
 
@@ -146,7 +146,7 @@ class PriceManagerClient:
 
         # query actual count of price records for entity and date range
         actual_count = self.db.count_prices(entity_id, start, end)
-        print(f"Expected price count: {expected_count}, actual price count: {actual_count} for entity_id {entity_id} and date range {start} to {end}")
+        print(f"{datetime.now().isoformat()} : Expected price count: {expected_count}, actual price count: {actual_count} for entity_id {entity_id} and date range {start} to {end}")
         return actual_count >= expected_count
 
     def _expected_price_count(self, frequency: str, has_weekend: bool, start: datetime, end: datetime) -> Optional[int]:

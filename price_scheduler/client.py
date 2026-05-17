@@ -113,7 +113,7 @@ class PriceSchedulerClient:
                 stop_date = datetime(2000, 1, 1)  # arbitrary default stop date if none provided
             stop_date = stop_date.date()
 
-            print(f"Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing prices starting from {scan.date()} back to {stop_date}")
+            print(f"{datetime.now().isoformat()} : Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing prices starting from {stop_date} to{scan.date()}")
 
             open_task_count = 0
             while True:
@@ -138,7 +138,7 @@ class PriceSchedulerClient:
                     current_task = self.db.get_task_for_range(entity.id, month_start, month_end)
 
                     if not current_task:
-                        print(f"No existing task for month {month_start.date()} to {month_end.date()}, creating new task and continuing")
+                        print(f"{datetime.now().isoformat()} : No existing task for month {month_start.date()} to {month_end.date()}, creating new task and continuing")
                         # create a new task for the entity and month range
                         tr = self.db.create_new_task(entity.id, month_start, month_end)
                         created.append(tr)
@@ -176,7 +176,7 @@ class PriceSchedulerClient:
             scan = now - timedelta(days=1)
             week_cutoff = now - timedelta(days=now.weekday() + 7)  # Previous Monday
 
-            print(f"Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing daily prices from {scan.date()} back to {week_cutoff.date()}")
+            print(f"{datetime.now().isoformat()} : Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing daily prices from {week_cutoff.date()} to {scan.date()}")
 
             open_task_count = 0
             while scan.date() >= week_cutoff.date():
@@ -200,7 +200,7 @@ class PriceSchedulerClient:
                     current_task = self.db.get_task_for_range(entity.id, day_start, day_end)
 
                     if not current_task:
-                        print(f"No existing task for day {day_start.date()}, creating new task")
+                        print(f"{datetime.now().isoformat()} : No existing task for day {day_start.date()}, creating new task")
                         tr = self.db.create_new_task(entity.id, day_start, day_end)
                         created.append(tr)
                         open_task_count += 1
@@ -235,7 +235,7 @@ class PriceSchedulerClient:
             month_ago = now - timedelta(days=30)
             stop_date = datetime(month_ago.year, month_ago.month, month_ago.day, tzinfo=month_ago.tzinfo).date()
 
-            print(f"Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing weekly prices starting from {scan.date()} back to {stop_date}")
+            print(f"{datetime.now().isoformat()} : Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing weekly prices starting from {stop_date} to {scan.date()}")
 
             open_task_count = 0
             while True:
@@ -258,7 +258,7 @@ class PriceSchedulerClient:
                     current_task = self.db.get_task_for_range(entity.id, week_start, week_end)
 
                     if not current_task:
-                        print(f"No existing task for week {week_start.date()} to {week_end.date()}, creating new task")
+                        print(f"{datetime.now().isoformat()} : No existing task for week {week_start.date()} to {week_end.date()}, creating new task")
                         tr = self.db.create_new_task(entity.id, week_start, week_end)
                         created.append(tr)
                         open_task_count += 1

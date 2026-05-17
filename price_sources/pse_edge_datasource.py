@@ -19,6 +19,8 @@ class PSEEdgeDataSource(RestJSONDatasource):
         end: datetime,
         config: dict,
         ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        # input date is start inclusive and end exclusive, but the datasource expects end to be inclusive
+        # subtract 1 day from end date to make it inclusive for the datasource
         return (
             None,
             None,
@@ -26,7 +28,7 @@ class PSEEdgeDataSource(RestJSONDatasource):
                 "cmpy_id": config.get("cmpy_id"),
                 "security_id": config.get("security_id"),
                 "startDate": start.strftime("%m-%d-%Y"),
-                "endDate": end.strftime("%m-%d-%Y")
+                "endDate": (end - timedelta(days=1)).strftime("%m-%d-%Y")
             })
 
 

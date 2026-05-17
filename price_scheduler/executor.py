@@ -1,6 +1,6 @@
 """ The price scheduler module is responsible for scheduling and running tasks to fetch price data for financial entities.
 """
-
+from datetime import datetime
 import random
 import signal
 
@@ -113,5 +113,5 @@ class PriceSchedulerExecutor:
             self.db.complete_task(task.id)
         except Exception as e:
             # log the error and mark the task as failed if it has exceeded max retries
-            print(f"Error executing task {task.id}: {e}")
+            print(f"{datetime.now().isoformat()} : Error executing task {task.id}: {e}")
             self.db.fail_task(task.id, self.max_retries)

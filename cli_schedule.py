@@ -56,7 +56,7 @@ def build_all_tasks(args: Optional[argparse.Namespace]):
     all_created_tasks.extend(monthly_tasks)
 
     for task in all_created_tasks:
-        print(f"Created task {task.id} for entity {task.entity_id} from {task.timestamp_start} to {task.timestamp_end} with status {task.status}")
+        print(f"{datetime.now().isoformat()} : Created task {task.id} for entity {task.entity_id} from {task.timestamp_start} to {task.timestamp_end} with status {task.status}")
 
 if __name__ == "__main__":
     main()

@@ -224,8 +224,8 @@ class Database:
                     (
                     timestamp_start IS NOT NULL
                     AND timestamp_end IS NOT NULL
-                    AND timestamp_end >= :start
-                    AND timestamp_end <= :end
+                    AND timestamp_start >= :start
+                    AND timestamp_start < :end
                     )
             )
             """

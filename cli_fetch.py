@@ -33,7 +33,7 @@ def main():
         args.entity_code,
         datetime.strptime(args.start, "%Y-%m-%dT%H:%M:%S"),
         datetime.strptime(args.end, "%Y-%m-%dT%H:%M:%S"))
-    print(f"Inserted {inserted_count} price records for entity {args.entity_code if args.entity_code else args.entity_id} between {args.start} and {args.end}")
+    print(f"{datetime.now().isoformat()} : Inserted {inserted_count} price records for entity {args.entity_code if args.entity_code else args.entity_id} between {args.start} and {args.end}")
 
 if __name__ == "__main__":
     main()
