@@ -417,6 +417,78 @@ class Database:
         with self.engine.begin() as conn:
             conn.execute(q, {"task_id": str(task_id), "max_retries": max_retries})
 
+    def query_price_summary(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[dict[str, object]]:
+        """Query aggregate summary statistics for a price series in a date range.
+
+        Uses COALESCE(close, price) to handle both OHLC and single-price entities.
+        All aggregation (COUNT, MIN, MAX, AVG, STDDEV_POP) runs in PostgreSQL.
+        first_close / last_close are fetched via windowed subqueries.
+        period_return_pct is computed in SQL as ((last - first) / first) * 100.
+
+        Returns a dict with keys: count, min, max, avg, std_dev,
+        first_close, last_close, period_return_pct — or None if no rows found.
+        """
+        q = text(
+            """
+            WITH price_series AS (
+                SELECT COALESCE(close, price) AS p,
+                       ROW_NUMBER() OVER (ORDER BY COALESCE(timestamp, timestamp_start)) AS rn,
+                       COUNT(*) OVER () AS total
+                FROM price
+                WHERE entity_id = :entity_id
+                  AND (
+                    (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
+                    OR
+                    (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL
+                     AND timestamp_start < :end AND timestamp_end > :start)
+                  )
+            ),
+            stats AS (
+                SELECT
+                    COUNT(*)        AS count,
+                    MIN(p)          AS min,
+                    MAX(p)          AS max,
+                    AVG(p)          AS avg,
+                    STDDEV_POP(p)   AS std_dev,
+                    MIN(CASE WHEN rn = 1 THEN p END)       AS first_close,
+                    MIN(CASE WHEN rn = total THEN p END)    AS last_close
+                FROM price_series
+            )
+            SELECT
+                s.count,
+                s.min,
+                s.max,
+                s.avg,
+                COALESCE(s.std_dev, 0)          AS std_dev,
+                s.first_close,
+                s.last_close,
+                CASE
+                    WHEN s.first_close IS NOT NULL AND s.first_close <> 0
+                    THEN ROUND(((s.last_close - s.first_close) / s.first_close) * 100, 2)
+                    ELSE 0
+                END                             AS period_return_pct
+            FROM stats s
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            row = res.mappings().first()
+            if not row:
+                return None
+            count = row.get("count")
+            if not count or int(count) == 0:
+                return None
+            return {
+                "count": int(row["count"]),
+                "min": float(row["min"]),
+                "max": float(row["max"]),
+                "avg": float(row["avg"]),
+                "std_dev": float(row["std_dev"]),
+                "first_close": float(row["first_close"]),
+                "last_close": float(row["last_close"]),
+                "period_return_pct": float(row["period_return_pct"]),
+            }
+
     def complete_task(self, task_id: UUID):
         """Set task status to COMPLETED."""
         q = text(

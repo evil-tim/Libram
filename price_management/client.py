@@ -122,6 +122,10 @@ class PriceManagerClient:
         # ensure entity id is a UUID instance
         return self.db.query_prices(entity_id, start, end, page, size)
 
+    def query_price_summary(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[dict[str, object]]:
+        """Query aggregate summary statistics for a price series in a date range."""
+        return self.db.query_price_summary(entity_id, start, end)
+
     def _prices_exist(self, entity: dict[str, object], start: datetime, end: datetime) -> bool:
         entity_id = entity.get("id")
         if not entity_id:
