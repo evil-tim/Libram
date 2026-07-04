@@ -417,6 +417,41 @@ class Database:
         with self.engine.begin() as conn:
             conn.execute(q, {"task_id": str(task_id), "max_retries": max_retries})
 
+    def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> List[tuple[datetime, float]]:
+        """Fetch the full ordered close/price series for an entity and date range.
+
+        Used by moving-average computations which need the full window (no pagination).
+        Uses COALESCE(close, price) to handle both OHLC and single-price entities.
+        Returns a list of (timestamp, value) tuples ordered by timestamp ascending.
+        Rows where both close and price are NULL are skipped.
+        """
+        q = text(
+            """
+            SELECT COALESCE(timestamp, timestamp_start) AS ts,
+                   COALESCE(close, price) AS value
+            FROM price
+            WHERE entity_id = :entity_id
+            AND (
+                (timestamp IS NOT NULL AND timestamp >= :start AND timestamp < :end)
+                OR
+                (timestamp_start IS NOT NULL AND timestamp_end IS NOT NULL AND timestamp_start < :end AND timestamp_end > :start)
+            )
+            AND COALESCE(close, price) IS NOT NULL
+            ORDER BY COALESCE(timestamp, timestamp_start)
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            rows = res.all()
+        out: List[tuple[datetime, float]] = []
+        for r in rows:
+            ts = r[0]
+            value = r[1]
+            if ts is None or value is None:
+                continue
+            out.append((ts, float(value)))
+        return out
+
     def query_price_summary(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[dict[str, object]]:
         """Query aggregate summary statistics for a price series in a date range.
 

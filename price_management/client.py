@@ -122,6 +122,14 @@ class PriceManagerClient:
         # ensure entity id is a UUID instance
         return self.db.query_prices(entity_id, start, end, page, size)
 
+    def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> list[tuple[datetime, float]]:
+        """Fetch the full ordered close/price series for an entity and date range.
+
+        Returns a list of (timestamp, value) tuples ordered by timestamp ascending.
+        Used by moving-average computations which need the full window.
+        """
+        return self.db.query_close_series(entity_id, start, end)
+
     def query_price_summary(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[dict[str, object]]:
         """Query aggregate summary statistics for a price series in a date range."""
         return self.db.query_price_summary(entity_id, start, end)

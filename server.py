@@ -5,7 +5,7 @@ from typing import Annotated, Optional
 from uuid import UUID
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
@@ -174,6 +174,171 @@ async def list_price_summary(
         "end": end,
         **summary,
     }
+
+
+@app.get(
+    "/api/v1/prices/sma",
+    operation_id="get_simple_moving_average",
+    description="Compute the Simple Moving Average (SMA) of close/price values for an entity within a date range. Each output entry is the arithmetic mean of the last `period` values up to and including that date. The first `period - 1` dates have no entry. Works for both OHLC and single-price entities.",
+)
+async def get_simple_moving_average(
+    entity_id: Annotated[UUID, Query(description="Select by entity UUID")],
+    start: Annotated[
+        str,
+        Query(
+            description="Start date for the date range, inclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    end: Annotated[
+        str,
+        Query(
+            description="End date for the date range, exclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    period: Annotated[
+        int,
+        Query(
+            description="Window size in number of data points (e.g. 20, 50, 200). Must be >= 2.",
+        ),
+    ],
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    if period < 2:
+        raise HTTPException(status_code=400, detail="period must be >= 2")
+
+    entity = price_manager.db.get_entity_by_id_raw(entity_id)
+    if not entity:
+        raise ValueError("entity not found")
+    timezone = entity.get("timezone")
+    if not timezone or not isinstance(timezone, str):
+        timezone = "UTC"
+
+    start_dt = convert_to_timezone_aware(start, timezone)
+    end_dt = convert_to_timezone_aware(end, timezone)
+
+    series = price_manager.query_close_series(entity_id, start_dt, end_dt)
+    data = compute_sma(series, period)
+    return {
+        "entity_id": str(entity_id),
+        "start": start,
+        "end": end,
+        "period": period,
+        "type": "SMA",
+        "data": data,
+    }
+
+
+@app.get(
+    "/api/v1/prices/ema",
+    operation_id="get_exponential_moving_average",
+    description="Compute the Exponential Moving Average (EMA) of close/price values for an entity within a date range. Seeded with the SMA of the first `period` data points, then recursed via ema_today = close_today * k + ema_yesterday * (1 - k) where k = 2 / (period + 1). Works for both OHLC and single-price entities.",
+)
+async def get_exponential_moving_average(
+    entity_id: Annotated[UUID, Query(description="Select by entity UUID")],
+    start: Annotated[
+        str,
+        Query(
+            description="Start date for the date range, inclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    end: Annotated[
+        str,
+        Query(
+            description="End date for the date range, exclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    period: Annotated[
+        int,
+        Query(
+            description="Window size in number of data points (e.g. 20, 50, 200). Must be >= 2.",
+        ),
+    ],
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    if period < 2:
+        raise HTTPException(status_code=400, detail="period must be >= 2")
+
+    entity = price_manager.db.get_entity_by_id_raw(entity_id)
+    if not entity:
+        raise ValueError("entity not found")
+    timezone = entity.get("timezone")
+    if not timezone or not isinstance(timezone, str):
+        timezone = "UTC"
+
+    start_dt = convert_to_timezone_aware(start, timezone)
+    end_dt = convert_to_timezone_aware(end, timezone)
+
+    series = price_manager.query_close_series(entity_id, start_dt, end_dt)
+    data = compute_ema(series, period)
+    return {
+        "entity_id": str(entity_id),
+        "start": start,
+        "end": end,
+        "period": period,
+        "type": "EMA",
+        "data": data,
+    }
+
+
+def _format_date(ts: datetime) -> str:
+    """Format a timestamp as a YYYY-MM-DD date string for moving-average output."""
+    if isinstance(ts, datetime):
+        return ts.date().isoformat()
+    # fall back to the first 10 chars of any date-like string
+    return str(ts)[:10]
+
+
+def compute_sma(series: list[tuple[datetime, float]], period: int) -> list[dict[str, object]]:
+    """Compute the Simple Moving Average over a (timestamp, value) series.
+
+    Returns a list of {"date": str, "value": float} entries. The first `period - 1`
+    data points have no entry (not enough values to fill the window).
+    """
+    out: list[dict[str, object]] = []
+    n = len(series)
+    window_sum = 0.0
+    for i in range(n):
+        window_sum += series[i][1]
+        if i >= period:
+            window_sum -= series[i - period][1]
+        if i >= period - 1:
+            out.append({
+                "date": _format_date(series[i][0]),
+                "value": round(window_sum / period, 4),
+            })
+    return out
+
+
+def compute_ema(series: list[tuple[datetime, float]], period: int) -> list[dict[str, object]]:
+    """Compute the Exponential Moving Average over a (timestamp, value) series.
+
+    Seeds the first EMA value with the SMA of the first `period` data points,
+    then recurses: ema_today = value_today * k + ema_yesterday * (1 - k),
+    where k = 2 / (period + 1). The first `period - 1` data points have no entry.
+    """
+    out: list[dict[str, object]] = []
+    n = len(series)
+    if n < period:
+        return out
+
+    k = 2.0 / (period + 1)
+    seed_sum = 0.0
+    for i in range(period):
+        seed_sum += series[i][1]
+    prev_ema = seed_sum / period
+    out.append({
+        "date": _format_date(series[period - 1][0]),
+        "value": round(prev_ema, 4),
+    })
+
+    for i in range(period, n):
+        value = series[i][1]
+        prev_ema = value * k + prev_ema * (1 - k)
+        out.append({
+            "date": _format_date(series[i][0]),
+            "value": round(prev_ema, 4),
+        })
+    return out
 
 
 def convert_to_timezone_aware(date_str: str, timezone_str: str) -> datetime:
