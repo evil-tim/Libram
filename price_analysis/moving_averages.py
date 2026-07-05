@@ -2,13 +2,7 @@
 
 from datetime import datetime
 
-
-def _format_date(ts: datetime) -> str:
-    """Format a timestamp as a YYYY-MM-DD date string for moving-average output."""
-    if isinstance(ts, datetime):
-        return ts.date().isoformat()
-    # fall back to the first 10 chars of any date-like string
-    return str(ts)[:10]
+from price_analysis.date_utils import _format_date
 
 
 def compute_sma(series: list[tuple[datetime, float]], period: int) -> list[dict[str, object]]:
