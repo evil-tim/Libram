@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, List, Optional
 from uuid import UUID
 
@@ -6,6 +7,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from libram_types.libram_types import EntityRecord, PriceRecord, TaskRecord
+
+_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema.sql"
 
 
 class Database:
@@ -538,37 +541,15 @@ class Database:
             conn.execute(q, {"task_id": str(task_id)})
 
     # entity_fundamentals methods
-    def ensure_entity_fundamentals_table(self):
-        """Create the entity_fundamentals table and index if they don't exist.
+    def init_db(self, schema_path: Path = _SCHEMA_PATH):
+        """Create any missing tables and indexes from the idempotent schema.sql.
 
-        Called on startup to ensure the table is available without requiring
-        a separate migration step.
+        Called on startup. All DDL in schema.sql uses IF NOT EXISTS, so
+        repeated calls are safe — no migrations or destructive changes.
         """
-        q = text(
-            """
-            CREATE TABLE IF NOT EXISTS entity_fundamentals (
-                id              TEXT PRIMARY KEY,
-                entity_id       UUID NOT NULL REFERENCES entity(id),
-                metrics         JSONB NOT NULL,
-                source_name     TEXT NOT NULL,
-                source_url      TEXT DEFAULT '',
-                as_of_date      DATE,
-                confidence      TEXT NOT NULL DEFAULT 'medium',
-                notes           TEXT DEFAULT '',
-                uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                uploaded_by     TEXT DEFAULT 'agent'
-            )
-            """
-        )
-        idx = text(
-            """
-            CREATE INDEX IF NOT EXISTS idx_entity_fundamentals_entity_date
-                ON entity_fundamentals(entity_id, as_of_date DESC)
-            """
-        )
+        ddl = schema_path.read_text(encoding="utf-8")
         with self.engine.begin() as conn:
-            conn.execute(q)
-            conn.execute(idx)
+            conn.execute(text(ddl))
 
     def insert_fundamentals(
         self,
