@@ -14,7 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from libram_database.db import Database
 from price_management.client import PriceManagerClient
 from price_scheduler.client import PriceSchedulerClient
-from price_analysis import compute_sma, compute_ema, convert_to_timezone_aware
+from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_timezone_aware
 
 from cli_schedule import build_all_tasks
 
@@ -275,6 +275,58 @@ async def get_exponential_moving_average(
         "end": end,
         "period": period,
         "type": "EMA",
+        "data": data,
+    }
+
+
+@app.get(
+    "/api/v1/prices/rsi",
+    operation_id="get_rsi",
+    description="Compute the Relative Strength Index (RSI) of close/price values for an entity within a date range. RSI oscillates between 0 and 100; values above 70 are traditionally considered overbought, values below 30 oversold. Uses Wilder's exponential smoothing. Works for both OHLC and single-price entities.",
+)
+async def get_rsi(
+    entity_id: Annotated[UUID, Query(description="Select by entity UUID")],
+    start: Annotated[
+        str,
+        Query(
+            description="Start date for the date range, inclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    end: Annotated[
+        str,
+        Query(
+            description="End date for the date range, exclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
+        ),
+    ],
+    period: Annotated[
+        int,
+        Query(
+            description="RSI lookback period in number of data points (e.g. 14). Must be >= 2.",
+        ),
+    ],
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    if period < 2:
+        raise HTTPException(status_code=400, detail="period must be >= 2")
+
+    entity = price_manager.db.get_entity_by_id_raw(entity_id)
+    if not entity:
+        raise ValueError("entity not found")
+    timezone = entity.get("timezone")
+    if not timezone or not isinstance(timezone, str):
+        timezone = "UTC"
+
+    start_dt = convert_to_timezone_aware(start, timezone)
+    end_dt = convert_to_timezone_aware(end, timezone)
+
+    series = price_manager.query_close_series(entity_id, start_dt, end_dt)
+    data = compute_rsi(series, period)
+    return {
+        "entity_id": str(entity_id),
+        "start": start,
+        "end": end,
+        "period": period,
+        "type": "RSI",
         "data": data,
     }
 

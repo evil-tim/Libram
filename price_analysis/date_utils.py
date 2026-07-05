@@ -4,6 +4,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
+def _format_date(ts: datetime) -> str:
+    """Format a timestamp as a YYYY-MM-DD date string for analysis output."""
+    if isinstance(ts, datetime):
+        return ts.date().isoformat()
+    # fall back to the first 10 chars of any date-like string
+    return str(ts)[:10]
+
+
 def convert_to_timezone_aware(date_str: str, timezone_str: str) -> datetime:
     """Convert a date string to a timezone-aware datetime object.
 
