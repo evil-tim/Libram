@@ -536,3 +536,102 @@ class Database:
         )
         with self.engine.begin() as conn:
             conn.execute(q, {"task_id": str(task_id)})
+
+    # entity_fundamentals methods
+    def ensure_entity_fundamentals_table(self):
+        """Create the entity_fundamentals table and index if they don't exist.
+
+        Called on startup to ensure the table is available without requiring
+        a separate migration step.
+        """
+        q = text(
+            """
+            CREATE TABLE IF NOT EXISTS entity_fundamentals (
+                id              TEXT PRIMARY KEY,
+                entity_id       UUID NOT NULL REFERENCES entity(id),
+                metrics         JSONB NOT NULL,
+                source_name     TEXT NOT NULL,
+                source_url      TEXT DEFAULT '',
+                as_of_date      DATE,
+                confidence      TEXT NOT NULL DEFAULT 'medium',
+                notes           TEXT DEFAULT '',
+                uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                uploaded_by     TEXT DEFAULT 'agent'
+            )
+            """
+        )
+        idx = text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_entity_fundamentals_entity_date
+                ON entity_fundamentals(entity_id, as_of_date DESC)
+            """
+        )
+        with self.engine.begin() as conn:
+            conn.execute(q)
+            conn.execute(idx)
+
+    def insert_fundamentals(
+        self,
+        id: str,
+        entity_id: UUID,
+        metrics: dict,
+        source_name: str,
+        source_url: str,
+        as_of_date: Optional[str],
+        confidence: str,
+        notes: str,
+        uploaded_by: str,
+    ) -> dict:
+        """Insert a fundamentals snapshot. Returns the inserted row as a dict."""
+        q = text(
+            """
+            INSERT INTO entity_fundamentals
+                (id, entity_id, metrics, source_name, source_url, as_of_date, confidence, notes, uploaded_by)
+            VALUES
+                (:id, :entity_id, :metrics::jsonb, :source_name, :source_url, :as_of_date, :confidence, :notes, :uploaded_by)
+            RETURNING *
+            """
+        )
+        import json
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {
+                "id": id,
+                "entity_id": str(entity_id),
+                "metrics": json.dumps(metrics),
+                "source_name": source_name,
+                "source_url": source_url,
+                "as_of_date": as_of_date,
+                "confidence": confidence,
+                "notes": notes,
+                "uploaded_by": uploaded_by,
+            })
+            row = res.mappings().first()
+            if not row:
+                raise RuntimeError("failed to insert fundamentals")
+            return dict(row)
+
+    def get_fundamentals_by_entity(
+        self, entity_id: UUID, latest_only: bool = True
+    ) -> List[dict]:
+        """Query fundamentals snapshots for an entity, ordered by uploaded_at DESC."""
+        if latest_only:
+            q = text(
+                """
+                SELECT * FROM entity_fundamentals
+                WHERE entity_id = :entity_id
+                ORDER BY uploaded_at DESC
+                LIMIT 1
+                """
+            )
+        else:
+            q = text(
+                """
+                SELECT * FROM entity_fundamentals
+                WHERE entity_id = :entity_id
+                ORDER BY uploaded_at DESC
+                """
+            )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id)})
+            rows = res.mappings().all()
+        return [dict(r) for r in rows]

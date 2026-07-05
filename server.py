@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from typing import Annotated, Optional
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
 from fastmcp.utilities.lifespan import combine_lifespans
+from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -18,6 +20,31 @@ from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_tim
 from price_analysis.comparison import build_comparison_payload
 
 from cli_schedule import build_all_tasks
+
+""" Constants """
+
+ALLOWED_FUNDAMENTAL_METRICS = {
+    "market_cap",        # PHP millions
+    "pe_ratio",          # x (trailing unless noted)
+    "pb_ratio",          # x
+    "eps",               # PHP
+    "shares_outstanding", # millions
+    "dividend_yield",    # percent (e.g., 3.55 for 3.55%)
+    "net_income_ttm",    # PHP millions
+}
+
+VALID_CONFIDENCE_LEVELS = {"high", "medium", "low"}
+
+""" Request / Response Models """
+
+class FundamentalsRequest(BaseModel):
+    entity_code: str
+    metrics: dict[str, float]
+    source_name: str
+    source_url: str = ""
+    as_of_date: str = ""
+    confidence: str = "medium"
+    notes: str = ""
 
 """ Dependencies """
 
@@ -48,7 +75,13 @@ async def get_scheduler_client(
 """ FastAPI lifecycle """
 
 def startup(_app: FastAPI):
-    # noop
+    # Ensure entity_fundamentals table exists on startup
+    load_dotenv()
+    db_string = os.getenv("LIBRAM_DB")
+    if db_string:
+        db = Database(db_string)
+        db.ensure_entity_fundamentals_table()
+        print("entity_fundamentals table ensured")
     print("Starting up server...")
 
 
@@ -380,6 +413,106 @@ async def compare_entities(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _format_fundamentals_response(row: dict, entity: Optional[dict]) -> dict:
+    """Format a raw entity_fundamentals DB row into the API response shape."""
+    metrics_raw = row.get("metrics", {})
+    # Ensure all seven metric keys are present (null for missing)
+    metrics = {k: metrics_raw.get(k) for k in ALLOWED_FUNDAMENTAL_METRICS}
+
+    uploaded_at = row.get("uploaded_at")
+    as_of_date = row.get("as_of_date")
+
+    return {
+        "snapshot_id": row.get("id"),
+        "entity_id": str(row.get("entity_id")),
+        "entity_code": entity.get("code") if entity else None,
+        "entity_name": entity.get("name") if entity else None,
+        "metrics": metrics,
+        "source": {
+            "name": row.get("source_name"),
+            "url": row.get("source_url", ""),
+            "as_of_date": str(as_of_date) if as_of_date else None,
+            "confidence": row.get("confidence"),
+            "notes": row.get("notes", ""),
+        },
+        "uploaded_at": uploaded_at.isoformat() if uploaded_at is not None else None,
+        "uploaded_by": row.get("uploaded_by", "agent"),
+    }
+
+
+@app.post(
+    "/api/v1/fundamentals",
+    operation_id="update_entity_fundamentals",
+    description="Upload structured fundamental financial metrics (P/E, market cap, EPS, etc.) for an entity as a timestamped snapshot with provenance and confidence metadata. Metrics are validated against the allowed set; unknown keys are rejected.",
+)
+async def update_entity_fundamentals(
+    body: FundamentalsRequest,
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    # Validate entity exists
+    entities = price_manager.query_entities(None, body.entity_code, None, None)
+    entities_list = list(entities)
+    if not entities_list:
+        raise HTTPException(status_code=404, detail=f"entity not found: {body.entity_code}")
+    entity = entities_list[0]
+    entity_id = entity.id
+
+    # Validate metrics keys
+    unknown_keys = set(body.metrics.keys()) - ALLOWED_FUNDAMENTAL_METRICS
+    if unknown_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown metric keys: {sorted(unknown_keys)}. allowed: {sorted(ALLOWED_FUNDAMENTAL_METRICS)}",
+        )
+
+    # Validate metric values are numeric (Pydantic already enforces float, but null check)
+    for key, value in body.metrics.items():
+        if value is None:
+            raise HTTPException(status_code=400, detail=f"metric '{key}' has null value; omit the key instead")
+
+    # Validate confidence
+    if body.confidence not in VALID_CONFIDENCE_LEVELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid confidence: '{body.confidence}'. must be one of: {sorted(VALID_CONFIDENCE_LEVELS)}",
+        )
+
+    # Default as_of_date to today
+    as_of_date = body.as_of_date if body.as_of_date else str(date.today())
+
+    # Upload fundamentals
+    row = price_manager.upload_fundamentals(
+        entity_id=entity_id,
+        metrics=body.metrics,
+        source_name=body.source_name,
+        source_url=body.source_url,
+        as_of_date=as_of_date,
+        confidence=body.confidence,
+        notes=body.notes,
+    )
+
+    # Resolve entity raw for response
+    entity_raw = price_manager.db.get_entity_by_id_raw(entity_id)
+    return _format_fundamentals_response(row, entity_raw)
+
+
+@app.get(
+    "/api/v1/fundamentals",
+    operation_id="get_entity_fundamentals",
+    description="Query stored fundamental financial metrics for an entity. Returns one or more timestamped snapshots ordered by recency. Use latest_only=true (default) for the most recent snapshot only.",
+)
+async def get_entity_fundamentals(
+    entity_code: Annotated[str, Query(description="Entity code (ticker) to query fundamentals for")],
+    latest_only: Annotated[bool, Query(description="If true, return only the most recent snapshot")] = True,
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    entity_raw, rows = price_manager.get_fundamentals(entity_code, latest_only=latest_only)
+    if entity_raw is None:
+        raise HTTPException(status_code=404, detail=f"entity not found: {entity_code}")
+
+    return [_format_fundamentals_response(row, entity_raw) for row in rows]
 
 
 """ MCP setup to expose PriceSchedulerClient methods as MCP endpoints under /mcp path with stateless HTTP transport """
