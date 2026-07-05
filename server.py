@@ -75,13 +75,13 @@ async def get_scheduler_client(
 """ FastAPI lifecycle """
 
 def startup(_app: FastAPI):
-    # Ensure entity_fundamentals table exists on startup
+    # Run idempotent schema DDL to create any missing tables/indexes
     load_dotenv()
     db_string = os.getenv("LIBRAM_DB")
     if db_string:
         db = Database(db_string)
-        db.ensure_entity_fundamentals_table()
-        print("entity_fundamentals table ensured")
+        db.init_db()
+        print("database schema initialised from schema.sql")
     print("Starting up server...")
 
 
