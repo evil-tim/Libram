@@ -94,3 +94,20 @@ CREATE TABLE IF NOT EXISTS task (
     CHECK (status IN ('OPEN', 'IN_PROGRESS', 'COMPLETED', 'FAILED')
 );
 CREATE INDEX IF NOT EXISTS idx_task_entity_start_end ON task (entity_id, timestamp_start, timestamp_end);
+-- entity_fundamentals
+-- Stores structured fundamental financial metrics (P/E, market cap, EPS, etc.) for entities.
+-- Each upload creates a new snapshot row, preserving history across research sessions.
+CREATE TABLE IF NOT EXISTS entity_fundamentals (
+    id              TEXT PRIMARY KEY,
+    entity_id       UUID NOT NULL REFERENCES entity(id),
+    metrics         JSONB NOT NULL,
+    source_name     TEXT NOT NULL,
+    source_url      TEXT DEFAULT '',
+    as_of_date      DATE,
+    confidence      TEXT NOT NULL DEFAULT 'medium',
+    notes           TEXT DEFAULT '',
+    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    uploaded_by     TEXT DEFAULT 'agent'
+);
+CREATE INDEX IF NOT EXISTS idx_entity_fundamentals_entity_date
+    ON entity_fundamentals(entity_id, as_of_date DESC);
