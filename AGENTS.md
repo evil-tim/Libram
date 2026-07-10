@@ -75,7 +75,7 @@ PostgreSQL. Schema and seed data:
 - `schema.sql` — tables: `datasource`, `entity`, `price`, `task`, `entity_fundamentals` (plus indexes)
 - `data.sql` — seed rows: 6 datasources, ~30 entities (PSE stocks, funds, crypto, forex)
 
-The server auto-initialises the schema on startup via `db.init_db()`, which executes `schema.sql` in a single transaction. All DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated calls are safe and new tables/indexes are created automatically.
+The database schema is found in `schema.sql`, applied manually to the target database for now. All DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated calls are safe and new tables/indexes are created automatically.
 
 ```bash
 # Manual schema setup (if needed)
