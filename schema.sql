@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS task (
     updated_at timestamptz NOT NULL DEFAULT now(),
     next_run_at timestamptz NOT NULL DEFAULT now(),
     -- constraint on status to be one of OPEN, IN_PROGRESS, COMPLETED, FAILED
-    CHECK (status IN ('OPEN', 'IN_PROGRESS', 'COMPLETED', 'FAILED')
+    CHECK (
+        status IN ('OPEN', 'IN_PROGRESS', 'COMPLETED', 'FAILED')
+    )
 );
 CREATE INDEX IF NOT EXISTS idx_task_entity_start_end ON task (entity_id, timestamp_start, timestamp_end);
 -- entity_fundamentals
