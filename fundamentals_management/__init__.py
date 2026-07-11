@@ -14,6 +14,15 @@ ALLOWED_FUNDAMENTAL_METRICS = {
 
 VALID_CONFIDENCE_LEVELS = {"high", "medium", "low"}
 
+CONFIDENCE_ORDER = {"high": 3, "medium": 2, "low": 1}
+
+
+def lower_confidence(a: str, b: str) -> str:
+    """Return the lower of two confidence levels."""
+    if CONFIDENCE_ORDER.get(a, 0) <= CONFIDENCE_ORDER.get(b, 0):
+        return a
+    return b
+
 
 class FundamentalsNotFound(Exception):
     pass
