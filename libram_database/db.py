@@ -591,27 +591,50 @@ class Database:
             return dict(row)
 
     def get_fundamentals_by_entity(
-        self, entity_id: UUID, latest_only: bool = True
+        self,
+        entity_id: UUID,
+        mode: str = "latest_only",
+        min_confidence: str = "low",
+        as_of_date_after: Optional[str] = None,
     ) -> List[dict]:
-        """Query fundamentals snapshots for an entity, ordered by uploaded_at DESC."""
-        if latest_only:
-            q = text(
-                """
-                SELECT * FROM entity_fundamentals
-                WHERE entity_id = :entity_id
-                ORDER BY uploaded_at DESC
-                LIMIT 1
-                """
-            )
-        else:
-            q = text(
-                """
-                SELECT * FROM entity_fundamentals
-                WHERE entity_id = :entity_id
-                ORDER BY uploaded_at DESC
-                """
-            )
+        """Query fundamentals snapshots for an entity, ordered by uploaded_at DESC.
+
+        mode:
+          - "latest_only": return the single most recent snapshot (LIMIT 1)
+          - "all": return all snapshots
+          - "latest_consolidated": return all snapshots (consolidation in Python)
+
+        min_confidence filters snapshots to those at or above the given level:
+          - "high": only high-confidence snapshots
+          - "medium": high or medium
+          - "low": no filter (all pass)
+
+        as_of_date_after (ISO date string, e.g. "2026-01-01") filters snapshots
+        to those with as_of_date >= the given date.
+        """
+        params: dict = {"entity_id": str(entity_id)}
+        clauses = ["entity_id = :entity_id"]
+
+        if min_confidence == "high":
+            clauses.append("confidence = 'high'")
+        elif min_confidence == "medium":
+            clauses.append("confidence IN ('high', 'medium')")
+
+        if as_of_date_after is not None:
+            clauses.append("as_of_date >= :as_of_date_after")
+            params["as_of_date_after"] = as_of_date_after
+
+        where_clause = " AND ".join(clauses)
+        limit_clause = "LIMIT 1" if mode == "latest_only" else ""
+
+        q = text(
+            f"SELECT * FROM entity_fundamentals "
+            f"WHERE {where_clause} "
+            f"ORDER BY uploaded_at DESC "
+            f"{limit_clause}".strip()
+        )
+
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id)})
+            res = conn.execute(q, params)
             rows = res.mappings().all()
         return [dict(r) for r in rows]

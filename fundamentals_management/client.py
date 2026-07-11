@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from fundamentals_management import ALLOWED_FUNDAMENTAL_METRICS, VALID_CONFIDENCE_LEVELS, FundamentalsNotFound, FundamentalsValidationError, FundamentalsRequest
+from fundamentals_management import ALLOWED_FUNDAMENTAL_METRICS, VALID_CONFIDENCE_LEVELS, FundamentalsNotFound, FundamentalsValidationError, FundamentalsRequest, lower_confidence
 from libram_database.db import Database
 from price_management.client import PriceManagerClient
 
@@ -100,7 +100,79 @@ class FundamentalsManagerClient:
         return self._format_fundamentals_response(row, entity_raw)
 
 
-    def fetch_entity_fundamentals(self, entity_code: str, latest_only: bool) -> list[dict]:
+    def _consolidate_snapshots(self, rows: list[dict], entity: Optional[dict]) -> dict:
+        """Merge the best available value for each metric across multiple snapshots.
+
+        Rows are expected to be ordered by uploaded_at DESC (most recent first).
+        For each metric, the first row with a non-null value wins.
+        """
+        # Track which rows contributed at least one metric value
+        contributing_indices: set[int] = set()
+        consolidated_metrics: dict = {}
+
+        for metric in ALLOWED_FUNDAMENTAL_METRICS:
+            value = None
+            for idx, row in enumerate(rows):
+                metrics_raw = row.get("metrics", {})
+                if metrics_raw is None:
+                    metrics_raw = {}
+                metric_value = metrics_raw.get(metric)
+                if metric_value is not None:
+                    value = metric_value
+                    contributing_indices.add(idx)
+                    break
+            consolidated_metrics[metric] = value
+
+        # If no row contributed any metric value, we shouldn't be here
+        # (caller checks for empty rows), but guard anyway.
+        if not contributing_indices:
+            contributing_indices = {0}
+
+        contributing_rows = [rows[i] for i in sorted(contributing_indices)]
+
+        # Oldest as_of_date among contributing rows
+        as_of_dates = [
+            r.get("as_of_date") for r in contributing_rows if r.get("as_of_date")
+        ]
+        oldest_date = min(as_of_dates) if as_of_dates else None
+        newest_date = max(as_of_dates) if as_of_dates else None
+
+        # Lowest confidence among contributing rows
+        consolidated_confidence = None
+        for r in contributing_rows:
+            row_conf = r.get("confidence")
+            if row_conf is None:
+                continue
+            if consolidated_confidence is None:
+                consolidated_confidence = row_conf
+            else:
+                consolidated_confidence = lower_confidence(consolidated_confidence, row_conf)
+
+        n = len(contributing_rows)
+        oldest_str = str(oldest_date) if oldest_date else "n/a"
+        newest_str = str(newest_date) if newest_date else "n/a"
+
+        return {
+            "snapshot_id": "consolidated",
+            "entity_id": str(rows[0].get("entity_id")) if rows else None,
+            "entity_code": entity.get("code") if entity else None,
+            "entity_name": entity.get("name") if entity else None,
+            "metrics": consolidated_metrics,
+            "source": {
+                "name": "n/a",
+                "url": "",
+                "as_of_date": str(oldest_date) if oldest_date else None,
+                "confidence": consolidated_confidence,
+                "notes": f"Consolidated from {n} snapshots ({oldest_str} to {newest_str})",
+            },
+            "uploaded_at": None,
+            "uploaded_by": "consolidated",
+        }
+
+
+    def fetch_entity_fundamentals(
+        self, entity_code: str, mode: str, min_confidence: str, as_of_date_after: Optional[str]
+    ) -> list[dict]:
         entities = self.price_manager_client.query_entities(None, entity_code, None, None)
 
         entities_list = list(entities)
@@ -109,10 +181,22 @@ class FundamentalsManagerClient:
 
         entity = entities_list[0]
         entity_id = entity.id
-        rows = self.db.get_fundamentals_by_entity(entity_id, latest_only=latest_only)
+        rows = self.db.get_fundamentals_by_entity(
+            entity_id, mode=mode, min_confidence=min_confidence, as_of_date_after=as_of_date_after
+        )
         # Return the raw entity dict from DB for richer data (name, etc.)
         entity_raw = self.db.get_entity_by_id_raw(entity_id)
         if entity_raw is None:
             raise FundamentalsNotFound(f"entity not found: {entity_code}")
 
-        return [self._format_fundamentals_response(row, entity_raw) for row in rows]
+        if mode == "latest_consolidated":
+            if not rows:
+                return []
+            return [self._consolidate_snapshots(rows, entity_raw)]
+        elif mode == "latest_only":
+            if not rows:
+                return []
+            return [self._format_fundamentals_response(rows[0], entity_raw)]
+        else:
+            # mode == "all"
+            return [self._format_fundamentals_response(row, entity_raw) for row in rows]

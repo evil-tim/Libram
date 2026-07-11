@@ -16,7 +16,7 @@ from price_management.client import PriceManagerClient
 from price_scheduler.client import PriceSchedulerClient
 from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_timezone_aware
 from price_analysis.comparison import build_comparison_payload
-from fundamentals_management import FundamentalsRequest, FundamentalsNotFound, FundamentalsValidationError
+from fundamentals_management import FundamentalsRequest, FundamentalsNotFound, FundamentalsValidationError, VALID_CONFIDENCE_LEVELS
 from fundamentals_management.client import FundamentalsManagerClient
 
 from cli_schedule import build_all_tasks
@@ -416,15 +416,22 @@ async def update_entity_fundamentals(
 @app.get(
     "/api/v1/fundamentals",
     operation_id="get_entity_fundamentals",
-    description="Query stored fundamental financial metrics for an entity. Returns one or more timestamped snapshots ordered by recency. Use latest_only=true (default) for the most recent snapshot only.",
+    description="Query stored fundamental financial metrics for an entity. Returns one or more timestamped snapshots ordered by recency. mode='latest_only' (default) returns the most recent snapshot; mode='all' returns every snapshot; mode='latest_consolidated' merges the best available value for each metric across snapshots. Optional min_confidence and as_of_date_after filters apply to all modes.",
 )
 async def get_entity_fundamentals(
     entity_code: Annotated[str, Query(description="Entity code (ticker) to query fundamentals for")],
-    latest_only: Annotated[bool, Query(description="If true, return only the most recent snapshot")] = True,
+    mode: Annotated[str, Query(description="Query mode: 'all' (all snapshots), 'latest_only' (single most recent), 'latest_consolidated' (merged best-per-metric across snapshots)")] = "latest_only",
+    min_confidence: Annotated[str, Query(description="Filter: only use snapshots at this confidence or higher. 'high' > 'medium' > 'low'")] = "low",
+    as_of_date_after: Annotated[Optional[str], Query(description="Filter: only use snapshots with as_of_date >= this ISO date (e.g. 2026-01-01)")] = None,
     fundamentals_manager: FundamentalsManagerClient = Depends(get_fundamentals_manager_client),
 ):
+    valid_modes = {"all", "latest_only", "latest_consolidated"}
+    if mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"invalid mode: '{mode}'. must be one of: {sorted(valid_modes)}")
+    if min_confidence not in VALID_CONFIDENCE_LEVELS:
+        raise HTTPException(status_code=400, detail=f"invalid min_confidence: '{min_confidence}'. must be one of: {sorted(VALID_CONFIDENCE_LEVELS)}")
     try:
-        return fundamentals_manager.fetch_entity_fundamentals(entity_code, latest_only)
+        return fundamentals_manager.fetch_entity_fundamentals(entity_code, mode, min_confidence, as_of_date_after)
     except FundamentalsNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
