@@ -31,39 +31,42 @@ Three layers, each independently runnable:
 ┌─────────────────────────────────────────────────────┐
 │  server.py (FastAPI + MCP)                          │
 │  REST API  /api/v1/entities  /api/v1/prices         │
-│            /api/v1/prices/sma  /prices/ema  /prices/rsi│
-│            /api/v1/prices/summary  /api/v1/compare  │
-│            /api/v1/fundamentals (GET + POST)        │
+│            /api/v1/prices/sma  /api/v1/prices/ema    │
+│            /api/v1/prices/rsi  /api/v1/prices/summary│
+│            /api/v1/compare  /api/v1/fundamentals      │
 │  MCP       /mcp                                      │
 │  Built-in APScheduler: task generation at 08:00/20:00│
 ├─────────────────────────────────────────────────────┤
+│  fundamentals_management/                            │
+│    client.py — fundamentals upload/query business    │
+├─────────────────────────────────────────────────────┤
 │  price_analysis/                                     │
-│    moving_averages.py — SMA and EMA computations    │
-│    rsi.py             — RSI (Wilder's smoothing)    │
-│    comparison.py      — multi-entity comparison     │
-│    max_drawdown.py    — max drawdown calculation    │
-│    date_utils.py      — timezone-aware parsing      │
+│    moving_averages.py — SMA and EMA computations      │
+│    rsi.py             — RSI (Wilder's smoothing)     │
+│    comparison.py      — multi-entity comparison       │
+│    max_drawdown.py    — max drawdown calculation      │
+│    date_utils.py      — timezone-aware parsing        │
 ├─────────────────────────────────────────────────────┤
 │  price_scheduler/                                    │
 │    client.py   — generates tasks for missing prices  │
 │    executor.py — threaded worker pool, polls for tasks│
 ├─────────────────────────────────────────────────────┤
 │  price_management/                                   │
-│    client.py     — fetch/store/query orchestrator    │
-│    datasource.py — BaseDatasource ABC                │
+│    client.py     — fetch/store/query orchestrator     │
+│    datasource.py — BaseDatasource ABC                 │
 ├─────────────────────────────────────────────────────┤
 │  price_sources/  (plugin implementations)            │
 │    rest_datasource.py — abstract REST/JSON base      │
+│    html_datasource.py — abstract HTML base           │
 │    pse_edge_datasource.py   — PSE Edge OHLC          │
-│    manulife_fund_datasource.py                       │
+│    coindesk_ohlc_datasource.py — CoinDesk OHLC      │
+│    ofx_forex_datasource.py — OFX forex time series   │
 │    bpi_fund_datasource.py                            │
+│    manulife_fund_datasource.py                       │
 │    slamc_fund_datasource.py                          │
-│    ofx_forex_datasource.py                           │
-│    coindesk_ohlc_datasource.py                       │
-│    html_datasource.py                                │
 ├─────────────────────────────────────────────────────┤
-│  libram_database/db.py  — SQLAlchemy CRUD layer      │
-│  libram_types/          — dataclasses: EntityRecord, │
+│  libram_database/db.py  — SQLAlchemy CRUD layer       │
+│  libram_types/          — dataclasses: EntityRecord,  │
 │                           PriceRecord, TaskRecord     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -148,21 +151,31 @@ Task granularity: daily (last week), weekly (last month), monthly (historical ba
 
 | File | Purpose |
 |---|---|
-| `server.py` | FastAPI app, MCP bridge, APScheduler, lifespan startup/shutdown |
-| `cli_scheduler.py` | Standalone scheduler executor (for separate container/process) |
-| `cli_schedule.py` | CLI to manually generate tasks |
-| `cli_fetch.py` | CLI to manually fetch prices for an entity |
-| `price_management/client.py` | Core fetch/store/query logic, fundamentals upload/query |
-| `price_management/datasource.py` | BaseDatasource ABC |
+| `server.py` | FastAPI app, MCP bridge, scheduled task generation, request routing |
+| `cli_scheduler.py` | Standalone scheduler executor (worker process for tasks) |
+| `cli_schedule.py` | CLI to manually generate scheduler tasks |
+| `cli_fetch.py` | CLI to manually fetch prices for a specific entity/date range |
+| `main.py` | Minimal entrypoint / project placeholder |
+| `fundamentals_management/client.py` | Fundamentals upload/query business logic |
+| `price_management/client.py` | Core fetch/store/query orchestrator for entities/prices |
+| `price_management/datasource.py` | BaseDatasource ABC for plugin datasources |
 | `price_sources/rest_datasource.py` | Abstract REST/JSON datasource base |
-| `price_scheduler/client.py` | Task generation logic (daily/weekly/monthly) |
-| `price_scheduler/executor.py` | Threaded task executor |
-| `price_analysis/moving_averages.py` | SMA and EMA computation |
-| `price_analysis/rsi.py` | RSI computation (Wilder's smoothing) |
-| `price_analysis/comparison.py` | Multi-entity comparison with indicators |
-| `price_analysis/max_drawdown.py` | Max drawdown calculation |
-| `price_analysis/date_utils.py` | Timezone-aware datetime parsing |
-| `libram_database/db.py` | SQLAlchemy database layer, `init_db()` for schema bootstrap |
-| `libram_types/libram_types.py` | EntityRecord, PriceRecord, TaskRecord |
-| `schema.sql` | Database schema (all tables + indexes, idempotent) |
-| `data.sql` | Seed data (datasources + entities) |
+| `price_sources/pse_edge_datasource.py` | PSE Edge OHLC datasource implementation |
+| `price_sources/coingecko_ohlc_datasource.py` | CoinGecko OHLC datasource implementation |
+| `price_sources/coindesk_ohlc_datasource.py` | CoinDesk OHLC datasource implementation |
+| `price_sources/ofx_forex_datasource.py` | OFX forex time series datasource |
+| `price_sources/bpi_fund_datasource.py` | BPI fund datasource implementation |
+| `price_sources/manulife_fund_datasource.py` | Manulife fund datasource implementation |
+| `price_sources/slamc_fund_datasource.py` | SLAMC fund datasource implementation |
+| `price_sources/html_datasource.py` | HTML scraper datasource implementation |
+| `price_scheduler/client.py` | Task generation logic for missing price ranges |
+| `price_scheduler/executor.py` | Worker executor polling and task processing |
+| `price_analysis/moving_averages.py` | SMA and EMA calculation utilities |
+| `price_analysis/rsi.py` | RSI calculation utilities |
+| `price_analysis/comparison.py` | Multi-entity comparison and indicator payload builder |
+| `price_analysis/max_drawdown.py` | Max drawdown calculation utilities |
+| `price_analysis/date_utils.py` | Timezone-aware date parsing and conversion helpers |
+| `libram_database/db.py` | Database layer and SQLAlchemy helpers |
+| `libram_types/libram_types.py` | Core dataclasses for entities, prices, tasks |
+| `schema.sql` | Database schema DDL for all tables and indexes |
+| `data.sql` | Seed data for datasources and entities |
