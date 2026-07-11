@@ -1,3 +1,5 @@
+import json
+
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -20,6 +22,16 @@ class Database:
     def __init__(self, dsn: str):
         self.dsn = dsn
         self.engine: Engine = create_engine(dsn)
+
+    def init_db(self, schema_path: Path = _SCHEMA_PATH):
+        """Create any missing tables and indexes from the idempotent schema.sql.
+
+        All DDL in schema.sql uses IF NOT EXISTS, so
+        repeated calls are safe — no migrations or destructive changes.
+        """
+        ddl = schema_path.read_text(encoding="utf-8")
+        with self.engine.begin() as conn:
+            conn.execute(text(ddl))
 
     # datasource methods
     def get_datasource_raw(self, datasource_id: UUID) -> Optional[dict[str, object]]:
@@ -420,6 +432,19 @@ class Database:
         with self.engine.begin() as conn:
             conn.execute(q, {"task_id": str(task_id), "max_retries": max_retries})
 
+    def complete_task(self, task_id: UUID):
+        """Set task status to COMPLETED."""
+        q = text(
+            """
+            UPDATE task
+            SET status = 'COMPLETED',
+                updated_at = now()
+            WHERE id = :task_id
+            """
+        )
+        with self.engine.begin() as conn:
+            conn.execute(q, {"task_id": str(task_id)})
+
     def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> List[tuple[datetime, float]]:
         """Fetch the full ordered close/price series for an entity and date range.
 
@@ -527,33 +552,9 @@ class Database:
                 "period_return_pct": float(row["period_return_pct"]),
             }
 
-    def complete_task(self, task_id: UUID):
-        """Set task status to COMPLETED."""
-        q = text(
-            """
-            UPDATE task
-            SET status = 'COMPLETED',
-                updated_at = now()
-            WHERE id = :task_id
-            """
-        )
-        with self.engine.begin() as conn:
-            conn.execute(q, {"task_id": str(task_id)})
-
     # entity_fundamentals methods
-    def init_db(self, schema_path: Path = _SCHEMA_PATH):
-        """Create any missing tables and indexes from the idempotent schema.sql.
-
-        Called on startup. All DDL in schema.sql uses IF NOT EXISTS, so
-        repeated calls are safe — no migrations or destructive changes.
-        """
-        ddl = schema_path.read_text(encoding="utf-8")
-        with self.engine.begin() as conn:
-            conn.execute(text(ddl))
-
     def insert_fundamentals(
         self,
-        id: str,
         entity_id: UUID,
         metrics: dict,
         source_name: str,
@@ -567,16 +568,14 @@ class Database:
         q = text(
             """
             INSERT INTO entity_fundamentals
-                (id, entity_id, metrics, source_name, source_url, as_of_date, confidence, notes, uploaded_by)
+                (entity_id, metrics, source_name, source_url, as_of_date, confidence, notes, uploaded_by)
             VALUES
-                (:id, :entity_id, :metrics::jsonb, :source_name, :source_url, :as_of_date, :confidence, :notes, :uploaded_by)
+                (:entity_id, :metrics::jsonb, :source_name, :source_url, :as_of_date, :confidence, :notes, :uploaded_by)
             RETURNING *
             """
         )
-        import json
         with self.engine.begin() as conn:
             res = conn.execute(q, {
-                "id": id,
                 "entity_id": str(entity_id),
                 "metrics": json.dumps(metrics),
                 "source_name": source_name,

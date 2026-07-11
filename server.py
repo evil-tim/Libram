@@ -16,13 +16,8 @@ from price_management.client import PriceManagerClient
 from price_scheduler.client import PriceSchedulerClient
 from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_timezone_aware
 from price_analysis.comparison import build_comparison_payload
-from fundamentals_management import (
-    FundamentalsRequest,
-    FundamentalsNotFound,
-    FundamentalsValidationError,
-    upload_fundamentals,
-    fetch_entity_fundamentals,
-)
+from fundamentals_management import FundamentalsRequest, FundamentalsNotFound, FundamentalsValidationError
+from fundamentals_management.client import FundamentalsManagerClient
 
 from cli_schedule import build_all_tasks
 
@@ -45,6 +40,11 @@ async def get_price_manager_client(
 ) -> PriceManagerClient:
     return PriceManagerClient(db)
 
+async def get_fundamentals_manager_client(
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    db: Database = Depends(get_database),
+) -> FundamentalsManagerClient:
+    return FundamentalsManagerClient(price_manager, db)
 
 async def get_scheduler_client(
     price_manager: PriceManagerClient = Depends(get_price_manager_client),
@@ -403,10 +403,10 @@ async def compare_entities(
 )
 async def update_entity_fundamentals(
     body: FundamentalsRequest,
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    fundamentals_manager: FundamentalsManagerClient = Depends(get_fundamentals_manager_client),
 ):
     try:
-        return upload_fundamentals(body, price_manager)
+        return fundamentals_manager.upload_fundamentals(body)
     except FundamentalsNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except FundamentalsValidationError as exc:
@@ -421,10 +421,10 @@ async def update_entity_fundamentals(
 async def get_entity_fundamentals(
     entity_code: Annotated[str, Query(description="Entity code (ticker) to query fundamentals for")],
     latest_only: Annotated[bool, Query(description="If true, return only the most recent snapshot")] = True,
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    fundamentals_manager: FundamentalsManagerClient = Depends(get_fundamentals_manager_client),
 ):
     try:
-        return fetch_entity_fundamentals(entity_code, latest_only, price_manager)
+        return fundamentals_manager.fetch_entity_fundamentals(entity_code, latest_only)
     except FundamentalsNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

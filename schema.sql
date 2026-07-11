@@ -100,8 +100,8 @@ CREATE INDEX IF NOT EXISTS idx_task_entity_start_end ON task (entity_id, timesta
 -- Stores structured fundamental financial metrics (P/E, market cap, EPS, etc.) for entities.
 -- Each upload creates a new snapshot row, preserving history across research sessions.
 CREATE TABLE IF NOT EXISTS entity_fundamentals (
-    id              TEXT PRIMARY KEY,
-    entity_id       UUID NOT NULL REFERENCES entity(id),
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    entity_id uuid NOT NULL REFERENCES entity(id),
     metrics         JSONB NOT NULL,
     source_name     TEXT NOT NULL,
     source_url      TEXT DEFAULT '',
