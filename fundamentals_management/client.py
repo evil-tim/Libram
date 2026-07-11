@@ -1,6 +1,5 @@
-from datetime import date
+from datetime import datetime
 from typing import Optional
-from uuid import UUID
 
 from fundamentals_management import ALLOWED_FUNDAMENTAL_METRICS, VALID_CONFIDENCE_LEVELS, FundamentalsNotFound, FundamentalsValidationError, FundamentalsRequest
 from libram_database.db import Database
@@ -49,22 +48,42 @@ class FundamentalsManagerClient:
         entity = entities_list[0]
         entity_id = entity.id
 
+        # if any of the metrics keys are not in the allowed set, raise an error
         unknown_keys = set(body.metrics.keys()) - ALLOWED_FUNDAMENTAL_METRICS
         if unknown_keys:
             raise FundamentalsValidationError(
                 f"unknown metric keys: {sorted(unknown_keys)}. allowed: {sorted(ALLOWED_FUNDAMENTAL_METRICS)}"
             )
 
+        # if any of the metrics values are None, raise an error
         for key, value in body.metrics.items():
             if value is None:
                 raise FundamentalsValidationError(f"metric '{key}' has null value; omit the key instead")
 
+        # if none of the metric keys provided are in the allowed set, raise an error
+        if not any(key in ALLOWED_FUNDAMENTAL_METRICS for key in body.metrics.keys()):
+            raise FundamentalsValidationError(
+                f"no valid metric keys provided. allowed: {sorted(ALLOWED_FUNDAMENTAL_METRICS)}"
+            )
+
+        # if the confidence level is not in the allowed set, raise an error
         if body.confidence not in VALID_CONFIDENCE_LEVELS:
             raise FundamentalsValidationError(
                 f"invalid confidence: '{body.confidence}'. must be one of: {sorted(VALID_CONFIDENCE_LEVELS)}"
             )
 
-        as_of_date = body.as_of_date if body.as_of_date else str(date.today())
+        # if as_of_date is provided, validate that it is a valid ISO 8601 date
+        as_of_date = None
+        if body.as_of_date:
+            try:
+                as_of_date = datetime.fromisoformat(body.as_of_date)
+            except ValueError:
+                raise FundamentalsValidationError(
+                    f"invalid as_of_date: '{body.as_of_date}'. must be a valid ISO 8601 date (e.g. 2025-12-31T00:00:00)"
+                )
+        else:
+            as_of_date = datetime.today()
+
 
         row = self.db.insert_fundamentals(
             entity_id=entity_id,

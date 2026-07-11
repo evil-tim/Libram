@@ -86,25 +86,6 @@ psql -U libram -d libram -f data.sql
 The `LIBRAM_DB` env var (or `.env` file) holds the SQLAlchemy DSN:
 `postgresql://user:***@host:5432/libram`
 
-### entity_fundamentals
-
-Stores structured fundamental metrics (P/E, market cap, EPS, etc.) as timestamped snapshots. Each upload creates a new row, preserving history. Schema:
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | TEXT PK | Generated as `fnd_<8hex>` |
-| `entity_id` | UUID FK | References `entity(id)` |
-| `metrics` | JSONB | Keys from the allowed set (see below) |
-| `source_name` | TEXT | Provenance |
-| `source_url` | TEXT | Optional |
-| `as_of_date` | DATE | Defaults to today |
-| `confidence` | TEXT | `high`, `medium`, or `low` |
-| `notes` | TEXT | Optional |
-| `uploaded_at` | TIMESTAMPTZ | Auto-set |
-| `uploaded_by` | TEXT | Defaults to `agent` |
-
-Allowed metric keys: `market_cap`, `pe_ratio`, `pb_ratio`, `eps`, `shares_outstanding`, `dividend_yield`, `net_income_ttm`.
-
 ## REST API Endpoints
 
 | Method | Path | Operation ID | Description |
@@ -116,7 +97,7 @@ Allowed metric keys: `market_cap`, `pe_ratio`, `pb_ratio`, `eps`, `shares_outsta
 | GET | `/api/v1/prices/ema` | `get_exponential_moving_average` | EMA over close/price series |
 | GET | `/api/v1/prices/rsi` | `get_rsi` | RSI (Wilder's smoothing) |
 | GET | `/api/v1/compare` | `compare_entities` | Multi-entity comparison with indicators |
-| POST | `/api/v1/fundamentals` | `update_entity_fundamentals` | Upload fundamentals snapshot |
+| POST | `/api/v1/fundamentals` | `update_entity_fundamentals` | Upload fundamentals snapshot. Allowed metric keys: `market_cap`, `pe_ratio`, `pb_ratio`, `eps`, `shares_outstanding`, `dividend_yield`, `net_income_ttm`. |
 | GET | `/api/v1/fundamentals` | `get_entity_fundamentals` | Query fundamentals (latest or all) |
 
 All endpoints are also exposed as MCP tools via FastMCP at `/mcp`.
