@@ -559,7 +559,7 @@ class Database:
         metrics: dict,
         source_name: str,
         source_url: str,
-        as_of_date: Optional[str],
+        as_of_date: datetime,
         confidence: str,
         notes: str,
         uploaded_by: str,
@@ -570,7 +570,7 @@ class Database:
             INSERT INTO entity_fundamentals
                 (entity_id, metrics, source_name, source_url, as_of_date, confidence, notes, uploaded_by)
             VALUES
-                (:entity_id, :metrics::jsonb, :source_name, :source_url, :as_of_date, :confidence, :notes, :uploaded_by)
+                (:entity_id, :metrics, :source_name, :source_url, :as_of_date, :confidence, :notes, :uploaded_by)
             RETURNING *
             """
         )
