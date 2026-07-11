@@ -164,6 +164,36 @@ server.py must NOT contain:
 
 **Litmus test:** if a function can be unit-tested without importing FastAPI, it doesn't belong in server.py.
 
+### Services are injected via FastAPI Depends
+
+Domain clients (`PriceManagerClient`, `FundamentalsManagerClient`, `PriceSchedulerClient`, `Database`) are **never instantiated directly** in route handlers. They are created through a `Depends` chain defined in server.py:
+
+```python
+# Provider functions (defined once in server.py)
+async def get_price_manager_client(
+    db: Database = Depends(get_database),
+) -> PriceManagerClient:
+    return PriceManagerClient(db)
+
+# Route handlers receive clients via Depends — never construct them manually
+@app.get("/api/v1/prices")
+async def list_prices(
+    ...,
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    ...
+```
+
+When adding a new domain package, add a corresponding `get_*_client` provider in server.py and inject it via `Depends` in every route that needs it. If the new client depends on an existing one (e.g. needs `PriceManagerClient`), chain them:
+
+```python
+async def get_new_client(
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    db: Database = Depends(get_database),
+) -> NewClient:
+    return NewClient(price_manager, db)
+```
+
 ### Where code belongs
 
 | Code type | Destination | Example |
@@ -185,19 +215,22 @@ When adding a new feature that introduces significant logic:
 ### Anti-pattern: "route handler as implementation"
 
 ```
-# BAD — computation lives in server.py
+# BAD — computation lives in server.py, service instantiated inline
 @app.get("/api/v1/compare")
 async def compare_entities(...):
+    pm = PriceManagerClient(db)   # don't do this
     # 200 lines of parsing, fetching, computing, ranking
     ...
 
-# GOOD — computation lives in domain module
+# GOOD — computation lives in domain module, service injected via Depends
 from price_analysis.comparison import build_comparison_payload
 
 @app.get("/api/v1/compare")
-async def compare_entities(...):
-    result = build_comparison_payload(entity_codes, start, end, indicators, price_manager)
-    return result
+async def compare_entities(
+    ...,
+    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+):
+    return build_comparison_payload(entity_codes, start, end, indicators, price_manager)
 ```
 
 ## Key Files
