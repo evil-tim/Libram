@@ -147,6 +147,59 @@ Task granularity: daily (last week), weekly (last month), monthly (historical ba
 - **No tests directory** — contributions welcome
 - **Docker**: `Dockerfile` + `docker-compose.yml` exist for production; supervisor runs both server and scheduler in one container
 
+## Architectural Rules
+
+### server.py is a thin routing layer
+
+server.py contains ONLY:
+- FastAPI app setup, dependency injection (`Depends`), lifespan management
+- Route handlers that validate input, delegate to domain modules, and return results
+- MCP bridge setup (`FastMCP.from_fastapi`)
+- APScheduler wiring (task generation cron jobs)
+
+server.py must NOT contain:
+- Business logic, computation, or data transformation
+- Helper functions that don't directly depend on FastAPI request/response objects
+- Imports of `statistics`, `math`, `re`, `asyncio` (for non-route concerns)
+
+**Litmus test:** if a function can be unit-tested without importing FastAPI, it doesn't belong in server.py.
+
+### Where code belongs
+
+| Code type | Destination | Example |
+|---|---|---|
+| Pure computation (no DB, no I/O) | `price_analysis/<module>.py` | SMA, RSI, max drawdown, ranking |
+| Business logic that talks to DB/API | Domain package `client.py` | `price_management/client.py`, `fundamentals_management/client.py` |
+| HTTP route handler (thin wrapper) | `server.py` | Parse query params, call domain module, return dict |
+| Datasource plugin | `price_sources/<name>_datasource.py` | PSE Edge, CoinGecko, BPI fund |
+| CLI entrypoint | `cli_*.py` | `cli_fetch.py`, `cli_schedule.py` |
+
+### New modules over monoliths
+
+When adding a new feature that introduces significant logic:
+- Create a new module in the appropriate package (e.g. `price_analysis/comparison.py`)
+- Export public functions from the package `__init__.py`
+- Keep the route handler in server.py under ~25 lines
+- If the feature spans multiple concerns (parsing + computation + ranking), split into separate functions within the module — don't create one giant function
+
+### Anti-pattern: "route handler as implementation"
+
+```
+# BAD — computation lives in server.py
+@app.get("/api/v1/compare")
+async def compare_entities(...):
+    # 200 lines of parsing, fetching, computing, ranking
+    ...
+
+# GOOD — computation lives in domain module
+from price_analysis.comparison import build_comparison_payload
+
+@app.get("/api/v1/compare")
+async def compare_entities(...):
+    result = build_comparison_payload(entity_codes, start, end, indicators, price_manager)
+    return result
+```
+
 ## Key Files
 
 | File | Purpose |
