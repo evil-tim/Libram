@@ -44,3 +44,27 @@ class TaskRecord:
     retry_count: Optional[int] = None
     created_at: Optional[datetime] = None
     next_run_at: Optional[datetime] = None
+
+
+@dataclass
+class PortfolioRecord:
+    id: UUID
+    name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class PortfolioOrderRecord:
+    id: UUID
+    portfolio_id: UUID
+    entity_id: UUID
+    date: Optional[datetime] = None
+    shares: Optional[Decimal] = None
+    type: Optional[str] = None  # 'buy' or 'sell'
+    cost_basis: Optional[Decimal] = None
+    cost_basis_entity_id: Optional[UUID] = None
+    fees: Optional[Decimal] = None
+    fees_entity_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

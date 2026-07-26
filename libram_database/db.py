@@ -8,7 +8,13 @@ from uuid import UUID
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from libram_types.libram_types import EntityRecord, PriceRecord, TaskRecord
+from libram_types.libram_types import (
+    EntityRecord,
+    PortfolioOrderRecord,
+    PortfolioRecord,
+    PriceRecord,
+    TaskRecord,
+)
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema.sql"
 
@@ -638,3 +644,386 @@ class Database:
             res = conn.execute(q, params)
             rows = res.mappings().all()
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # portfolio methods
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _row_to_portfolio(row) -> PortfolioRecord:
+        portfolio_id = row.get("id")
+        if not portfolio_id or not isinstance(portfolio_id, UUID):
+            raise RuntimeError("portfolio id is not a UUID")
+        return PortfolioRecord(
+            id=portfolio_id,
+            name=row.get("name"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+
+    @staticmethod
+    def _row_to_order(row) -> PortfolioOrderRecord:
+        order_id = row.get("id")
+        if not order_id or not isinstance(order_id, UUID):
+            raise RuntimeError("order id is not a UUID")
+        portfolio_id = row.get("portfolio_id")
+        if not portfolio_id or not isinstance(portfolio_id, UUID):
+            raise RuntimeError("order portfolio_id is not a UUID")
+        entity_id = row.get("entity_id")
+        if not entity_id or not isinstance(entity_id, UUID):
+            raise RuntimeError("order entity_id is not a UUID")
+        return PortfolioOrderRecord(
+            id=order_id,
+            portfolio_id=portfolio_id,
+            entity_id=entity_id,
+            date=row.get("date"),
+            shares=row.get("shares"),
+            type=row.get("type"),
+            cost_basis=row.get("cost_basis"),
+            cost_basis_entity_id=row.get("cost_basis_entity_id"),
+            fees=row.get("fees"),
+            fees_entity_id=row.get("fees_entity_id"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+
+    def create_portfolio(self, name: str) -> PortfolioRecord:
+        """Insert a portfolio row and return the record."""
+        q = text(
+            """
+            INSERT INTO portfolio (name)
+            VALUES (:name)
+            RETURNING *
+            """
+        )
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {"name": name})
+            row = res.mappings().first()
+            if not row:
+                raise RuntimeError("failed to create portfolio")
+        return self._row_to_portfolio(row)
+
+    def list_portfolios(self) -> List[PortfolioRecord]:
+        """Return all portfolios ordered by created_at ascending."""
+        q = text("SELECT * FROM portfolio ORDER BY created_at ASC")
+        with self.engine.connect() as conn:
+            res = conn.execute(q)
+            rows = res.mappings().all()
+        return [self._row_to_portfolio(r) for r in rows]
+
+    def get_portfolio(self, portfolio_id: UUID) -> Optional[PortfolioRecord]:
+        """Lookup a portfolio by UUID."""
+        q = text("SELECT * FROM portfolio WHERE id = :id")
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"id": str(portfolio_id)})
+            row = res.mappings().first()
+            if not row:
+                return None
+        return self._row_to_portfolio(row)
+
+    def update_portfolio(self, portfolio_id: UUID, name: str) -> Optional[PortfolioRecord]:
+        """Update a portfolio's name. Returns the updated record or None if not found."""
+        q = text(
+            """
+            UPDATE portfolio
+            SET name = :name, updated_at = now()
+            WHERE id = :id
+            RETURNING *
+            """
+        )
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {"id": str(portfolio_id), "name": name})
+            row = res.mappings().first()
+            if not row:
+                return None
+        return self._row_to_portfolio(row)
+
+    def delete_portfolio(self, portfolio_id: UUID) -> bool:
+        """Delete a portfolio by UUID. Returns True if a row was deleted."""
+        q = text("DELETE FROM portfolio WHERE id = :id")
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {"id": str(portfolio_id)})
+            return res.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # portfolio_order methods
+    # ------------------------------------------------------------------
+    def create_order(
+        self,
+        portfolio_id: UUID,
+        entity_id: UUID,
+        date: datetime,
+        shares,
+        type: str,
+        cost_basis,
+        cost_basis_entity_id: Optional[UUID],
+        fees,
+        fees_entity_id: Optional[UUID],
+    ) -> PortfolioOrderRecord:
+        """Insert a portfolio_order row and return the record."""
+        q = text(
+            """
+            INSERT INTO portfolio_order
+                (portfolio_id, entity_id, date, shares, type,
+                 cost_basis, cost_basis_entity_id, fees, fees_entity_id)
+            VALUES
+                (:portfolio_id, :entity_id, :date, :shares, :type,
+                 :cost_basis, :cost_basis_entity_id, :fees, :fees_entity_id)
+            RETURNING *
+            """
+        )
+        params = {
+            "portfolio_id": str(portfolio_id),
+            "entity_id": str(entity_id),
+            "date": date,
+            "shares": shares,
+            "type": type,
+            "cost_basis": cost_basis,
+            "cost_basis_entity_id": str(cost_basis_entity_id) if cost_basis_entity_id else None,
+            "fees": fees,
+            "fees_entity_id": str(fees_entity_id) if fees_entity_id else None,
+        }
+        with self.engine.begin() as conn:
+            res = conn.execute(q, params)
+            row = res.mappings().first()
+            if not row:
+                raise RuntimeError("failed to create order")
+        return self._row_to_order(row)
+
+    def get_order(self, order_id: UUID) -> Optional[PortfolioOrderRecord]:
+        """Lookup an order by UUID (any portfolio)."""
+        q = text("SELECT * FROM portfolio_order WHERE id = :id")
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"id": str(order_id)})
+            row = res.mappings().first()
+            if not row:
+                return None
+        return self._row_to_order(row)
+
+    def get_order_for_portfolio(self, order_id: UUID, portfolio_id: UUID) -> Optional[PortfolioOrderRecord]:
+        """Lookup an order scoped to a specific portfolio."""
+        q = text(
+            "SELECT * FROM portfolio_order WHERE id = :id AND portfolio_id = :portfolio_id"
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"id": str(order_id), "portfolio_id": str(portfolio_id)})
+            row = res.mappings().first()
+            if not row:
+                return None
+        return self._row_to_order(row)
+
+    _ORDER_UPDATEABLE_COLUMNS = {
+        "entity_id",
+        "date",
+        "shares",
+        "type",
+        "cost_basis",
+        "cost_basis_entity_id",
+        "fees",
+        "fees_entity_id",
+    }
+
+    def update_order(self, order_id: UUID, **kwargs) -> Optional[PortfolioOrderRecord]:
+        """Update an order with the given fields. Unknown keys are ignored.
+
+        Returns the updated record or None if the order was not found.
+        """
+        updates = {
+            k: v for k, v in kwargs.items()
+            if k in self._ORDER_UPDATEABLE_COLUMNS and v is not None
+        }
+        if not updates:
+            # nothing to update; just return the current record if it exists
+            return self.get_order(order_id)
+
+        # Normalize UUID values to str for the parameter binding.
+        normalized = {}
+        for k, v in updates.items():
+            if isinstance(v, UUID):
+                normalized[k] = str(v)
+            else:
+                normalized[k] = v
+        normalized["id"] = str(order_id)
+
+        set_clauses = [f"{k} = :{k}" for k in updates.keys()]
+        set_clauses.append("updated_at = now()")
+        set_sql = ", ".join(set_clauses)
+
+        q = text(f"UPDATE portfolio_order SET {set_sql} WHERE id = :id RETURNING *")
+        with self.engine.begin() as conn:
+            res = conn.execute(q, normalized)
+            row = res.mappings().first()
+            if not row:
+                return None
+        return self._row_to_order(row)
+
+    def delete_order(self, order_id: UUID) -> bool:
+        """Delete an order by UUID. Returns True if a row was deleted."""
+        q = text("DELETE FROM portfolio_order WHERE id = :id")
+        with self.engine.begin() as conn:
+            res = conn.execute(q, {"id": str(order_id)})
+            return res.rowcount > 0
+
+    _ORDER_SORT_COLUMNS = {"date": "po.date", "entity_code": "e.code",
+                           "shares": "po.shares", "cost_basis": "po.cost_basis"}
+
+    def query_orders(
+        self,
+        portfolio_id: UUID,
+        page: int = 0,
+        size: int = 20,
+        entity_id: Optional[UUID] = None,
+        order_type: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        sort_by: str = "date",
+        sort_order: str = "desc",
+    ) -> List[PortfolioOrderRecord]:
+        """Query orders for a portfolio with filtering, sorting, and pagination."""
+        clauses = ["po.portfolio_id = :portfolio_id"]
+        params: dict = {"portfolio_id": str(portfolio_id)}
+
+        if entity_id is not None:
+            clauses.append("po.entity_id = :entity_id")
+            params["entity_id"] = str(entity_id)
+        if order_type is not None:
+            clauses.append("po.type = :order_type")
+            params["order_type"] = order_type
+        if date_from is not None:
+            clauses.append("po.date >= :date_from")
+            params["date_from"] = date_from
+        if date_to is not None:
+            clauses.append("po.date <= :date_to")
+            params["date_to"] = date_to
+
+        sort_column = self._ORDER_SORT_COLUMNS.get(sort_by, "po.date")
+        sort_dir = "ASC" if str(sort_order).lower() == "asc" else "DESC"
+
+        where_sql = " AND ".join(clauses)
+        q = text(
+            f"""
+            SELECT po.*
+            FROM portfolio_order po
+            LEFT JOIN entity e ON po.entity_id = e.id
+            WHERE {where_sql}
+            ORDER BY {sort_column} {sort_dir}
+            LIMIT :limit OFFSET :offset
+            """
+        )
+        params["limit"] = size
+        params["offset"] = page * size
+
+        with self.engine.connect() as conn:
+            res = conn.execute(q, params)
+            rows = res.mappings().all()
+        return [self._row_to_order(r) for r in rows]
+
+    def count_orders(
+        self,
+        portfolio_id: UUID,
+        entity_id: Optional[UUID] = None,
+        order_type: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+    ) -> int:
+        """Count orders for a portfolio matching the given filters."""
+        clauses = ["portfolio_id = :portfolio_id"]
+        params: dict = {"portfolio_id": str(portfolio_id)}
+
+        if entity_id is not None:
+            clauses.append("entity_id = :entity_id")
+            params["entity_id"] = str(entity_id)
+        if order_type is not None:
+            clauses.append("type = :order_type")
+            params["order_type"] = order_type
+        if date_from is not None:
+            clauses.append("date >= :date_from")
+            params["date_from"] = date_from
+        if date_to is not None:
+            clauses.append("date <= :date_to")
+            params["date_to"] = date_to
+
+        where_sql = " AND ".join(clauses)
+        q = text(f"SELECT COUNT(*) AS c FROM portfolio_order WHERE {where_sql}")
+        with self.engine.connect() as conn:
+            res = conn.execute(q, params)
+            row = res.mappings().first()
+            count = row.get("c") if row else None
+            return int(count) if count is not None else 0
+
+    def get_orders_for_entity(self, portfolio_id: UUID, entity_id: UUID) -> List[PortfolioOrderRecord]:
+        """Return all orders for an entity in a portfolio, ordered by date ASC."""
+        q = text(
+            """
+            SELECT * FROM portfolio_order
+            WHERE portfolio_id = :portfolio_id AND entity_id = :entity_id
+            ORDER BY date ASC
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"portfolio_id": str(portfolio_id), "entity_id": str(entity_id)})
+            rows = res.mappings().all()
+        return [self._row_to_order(r) for r in rows]
+
+    def get_all_orders(self, portfolio_id: UUID) -> List[PortfolioOrderRecord]:
+        """Return all orders in a portfolio, ordered by date ASC."""
+        q = text(
+            "SELECT * FROM portfolio_order WHERE portfolio_id = :portfolio_id ORDER BY date ASC"
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"portfolio_id": str(portfolio_id)})
+            rows = res.mappings().all()
+        return [self._row_to_order(r) for r in rows]
+
+    def get_orders_for_portfolio(self, portfolio_id: UUID) -> List[PortfolioOrderRecord]:
+        """Alias for get_all_orders. Kept for naming clarity from the client."""
+        return self.get_all_orders(portfolio_id)
+
+    def get_all_orders_across_portfolios(self) -> List[PortfolioOrderRecord]:
+        """Return all orders across all portfolios, ordered by date ASC."""
+        q = text("SELECT * FROM portfolio_order ORDER BY date ASC")
+        with self.engine.connect() as conn:
+            res = conn.execute(q)
+            rows = res.mappings().all()
+        return [self._row_to_order(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # price helpers used by portfolio totals
+    # ------------------------------------------------------------------
+    def get_latest_price(self, entity_id: UUID):
+        """Return the most recent COALESCE(close, price) value for an entity, or None."""
+        q = text(
+            """
+            SELECT COALESCE(close, price) AS value
+            FROM price
+            WHERE entity_id = :entity_id AND COALESCE(close, price) IS NOT NULL
+            ORDER BY COALESCE(timestamp, timestamp_start) DESC
+            LIMIT 1
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id)})
+            row = res.first()
+            if not row or row[0] is None:
+                return None
+            return row[0]
+
+    def get_price_at_or_before(self, entity_id: UUID, target: datetime):
+        """Return the most recent COALESCE(close, price) value for an entity
+        at or before `target`, or None if no price row exists."""
+        q = text(
+            """
+            SELECT COALESCE(close, price) AS value
+            FROM price
+            WHERE entity_id = :entity_id
+              AND COALESCE(close, price) IS NOT NULL
+              AND COALESCE(timestamp, timestamp_start) <= :target
+            ORDER BY COALESCE(timestamp, timestamp_start) DESC
+            LIMIT 1
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "target": target})
+            row = res.first()
+            if not row or row[0] is None:
+                return None
+            return row[0]

@@ -113,3 +113,35 @@ CREATE TABLE IF NOT EXISTS entity_fundamentals (
 );
 CREATE INDEX IF NOT EXISTS idx_entity_fundamentals_entity_date
     ON entity_fundamentals(entity_id, as_of_date DESC);
+-- portfolio
+-- A named collection of orders for tracking investment positions.
+CREATE TABLE IF NOT EXISTS portfolio (
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    name text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- portfolio_order
+-- An individual buy or sell transaction within a portfolio.
+-- cost_basis is per-share price in the transaction currency.
+-- When cost_basis_entity_id is NULL, currency is PHP.
+-- When set, it references a currency entity for FX conversion.
+-- fees_entity_id follows the same convention.
+CREATE TABLE IF NOT EXISTS portfolio_order (
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    portfolio_id uuid NOT NULL REFERENCES portfolio(id) ON DELETE CASCADE,
+    entity_id uuid NOT NULL REFERENCES entity(id),
+    date timestamptz NOT NULL,
+    shares numeric NOT NULL CHECK (shares > 0),
+    type text NOT NULL CHECK (type IN ('buy', 'sell')),
+    cost_basis numeric NOT NULL CHECK (cost_basis >= 0),
+    cost_basis_entity_id uuid REFERENCES entity(id),
+    fees numeric NOT NULL DEFAULT 0 CHECK (fees >= 0),
+    fees_entity_id uuid REFERENCES entity(id),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_order_portfolio
+    ON portfolio_order(portfolio_id, date);
+CREATE INDEX IF NOT EXISTS idx_portfolio_order_entity
+    ON portfolio_order(entity_id);

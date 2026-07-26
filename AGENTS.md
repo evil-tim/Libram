@@ -34,11 +34,17 @@ Three layers, each independently runnable:
 │            /api/v1/prices/sma  /api/v1/prices/ema    │
 │            /api/v1/prices/rsi  /api/v1/prices/summary│
 │            /api/v1/compare  /api/v1/fundamentals      │
+│            /api/v1/portfolios  /api/v1/portfolios/... │
 │  MCP       /mcp                                      │
 │  Built-in APScheduler: task generation at 08:00/20:00│
 ├─────────────────────────────────────────────────────┤
 │  fundamentals_management/                            │
 │    client.py — fundamentals upload/query business    │
+├─────────────────────────────────────────────────────┤
+│  portfolio_management/                               │
+│    __init__.py — request models + exceptions         │
+│    client.py   — portfolio/order CRUD + totals       │
+│                   (average-cost method, FX via price) │
 ├─────────────────────────────────────────────────────┤
 │  price_analysis/                                     │
 │    moving_averages.py — SMA and EMA computations      │
@@ -75,7 +81,7 @@ Three layers, each independently runnable:
 
 PostgreSQL. Schema and seed data:
 
-- `schema.sql` — tables: `datasource`, `entity`, `price`, `task`, `entity_fundamentals` (plus indexes)
+- `schema.sql` — tables: `datasource`, `entity`, `price`, `task`, `entity_fundamentals`, `portfolio`, `portfolio_order` (plus indexes)
 - `data.sql` — seed rows: 6 datasources, ~30 entities (PSE stocks, funds, crypto, forex)
 
 The database schema is found in `schema.sql`, applied manually to the target database for now. All DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated calls are safe and new tables/indexes are created automatically.
@@ -102,6 +108,18 @@ The `LIBRAM_DB` env var (or `.env` file) holds the SQLAlchemy DSN:
 | GET | `/api/v1/compare` | `compare_entities` | Multi-entity comparison with indicators |
 | POST | `/api/v1/fundamentals` | `update_entity_fundamentals` | Upload fundamentals snapshot. Allowed metric keys: `market_cap`, `pe_ratio`, `pb_ratio`, `eps`, `shares_outstanding`, `dividend_yield`, `net_income_ttm`. |
 | GET | `/api/v1/fundamentals` | `get_entity_fundamentals` | Query fundamentals (latest or all) |
+| POST | `/api/v1/portfolios` | `create_portfolio` | Create a named portfolio |
+| GET | `/api/v1/portfolios` | `list_portfolios` | List all portfolios |
+| PUT | `/api/v1/portfolios/{portfolio_id}` | `update_portfolio` | Rename a portfolio |
+| DELETE | `/api/v1/portfolios/{portfolio_id}` | `delete_portfolio` | Delete a portfolio (cascades to orders) |
+| POST | `/api/v1/portfolios/{portfolio_id}/orders` | `create_order` | Record a buy/sell order (resolves entity codes, validates sell sufficiency) |
+| GET | `/api/v1/portfolios/{portfolio_id}/orders` | `list_orders` | Paginated, filterable, sortable order listing |
+| PUT | `/api/v1/portfolios/{portfolio_id}/orders/{order_id}` | `update_order` | Update an order (re-validates sell sufficiency) |
+| DELETE | `/api/v1/portfolios/{portfolio_id}/orders/{order_id}` | `delete_order` | Delete an order |
+| GET | `/api/v1/portfolios/{portfolio_id}/totals` | `get_portfolio_totals` | Aggregate totals (average-cost method, FX-converted to PHP) |
+| GET | `/api/v1/portfolios/totals` | `get_all_portfolios_totals` | Aggregate totals across all portfolios |
+| GET | `/api/v1/portfolios/{portfolio_id}/totals/by-entity` | `get_portfolio_totals_by_entity` | Per-entity breakdown + aggregate totals for one portfolio |
+| GET | `/api/v1/portfolios/totals/by-entity` | `get_all_portfolios_totals_by_entity` | Per-entity breakdown + aggregate totals across all portfolios |
 
 All endpoints are also exposed as MCP tools via FastMCP at `/mcp`.
 
@@ -243,6 +261,8 @@ async def compare_entities(
 | `cli_fetch.py` | CLI to manually fetch prices for a specific entity/date range |
 | `main.py` | Minimal entrypoint / project placeholder |
 | `fundamentals_management/client.py` | Fundamentals upload/query business logic |
+| `portfolio_management/__init__.py` | Portfolio/order request models and exceptions |
+| `portfolio_management/client.py` | Portfolio/order CRUD, sell validation, and average-cost totals computation |
 | `price_management/client.py` | Core fetch/store/query orchestrator for entities/prices |
 | `price_management/datasource.py` | BaseDatasource ABC for plugin datasources |
 | `price_sources/rest_datasource.py` | Abstract REST/JSON datasource base |
