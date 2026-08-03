@@ -43,8 +43,11 @@ Three layers, each independently runnable:
 ├─────────────────────────────────────────────────────┤
 │  portfolio_management/                               │
 │    __init__.py — request models + exceptions         │
-│    client.py   — portfolio/order CRUD + totals       │
-│                   (average-cost method, FX via price) │
+│    client.py    — thin coordinator for portfolio      │
+│                   order, and totals services           │
+│    portfolio.py — portfolio CRUD operations          │
+│    order.py     — order CRUD + sell validation       │
+│    totals.py    — average-cost totals + by-entity     │
 ├─────────────────────────────────────────────────────┤
 │  price_analysis/                                     │
 │    moving_averages.py — SMA and EMA computations      │
@@ -262,7 +265,10 @@ async def compare_entities(
 | `main.py` | Minimal entrypoint / project placeholder |
 | `fundamentals_management/client.py` | Fundamentals upload/query business logic |
 | `portfolio_management/__init__.py` | Portfolio/order request models and exceptions |
-| `portfolio_management/client.py` | Portfolio/order CRUD, sell validation, and average-cost totals computation |
+| `portfolio_management/client.py` | Thin coordinator that delegates portfolio, order, and totals operations |
+| `portfolio_management/portfolio.py` | Portfolio CRUD service |
+| `portfolio_management/order.py` | Order CRUD, entity resolution, and sell-sufficiency validation |
+| `portfolio_management/totals.py` | Average-cost totals and per-entity breakdown computation |
 | `price_management/client.py` | Core fetch/store/query orchestrator for entities/prices |
 | `price_management/datasource.py` | BaseDatasource ABC for plugin datasources |
 | `price_sources/rest_datasource.py` | Abstract REST/JSON datasource base |
