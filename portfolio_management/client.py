@@ -27,15 +27,6 @@ class PortfolioManagerClient:
         self.order_service = OrderService(price_manager, db)
         self.totals_service = TotalsService(db)
 
-    def _resolve_entity(self, entity_code: str):
-        return self.order_service._resolve_entity(entity_code)
-
-    def _resolve_entity_id(self, entity_code: str) -> UUID:
-        return self.order_service._resolve_entity_id(entity_code)
-
-    def _entity_lookup(self, entity_ids: set[UUID]) -> dict[UUID, dict]:
-        return self.order_service._entity_lookup(entity_ids)
-
     def create_portfolio(self, body: CreatePortfolioRequest) -> dict:
         return self.portfolio_service.create_portfolio(body)
 
@@ -81,24 +72,8 @@ class PortfolioManagerClient:
             sort_order=sort_order,
         )
 
-    def _validate_sell_insertion(self, existing_orders, new_date, new_shares) -> None:
-        return self.order_service._validate_sell_insertion(existing_orders, new_date, new_shares)
-
-    def _revalidate_sequence(self, portfolio_id: UUID, order_id: UUID, current, updates: dict) -> None:
-        return self.order_service._revalidate_sequence(portfolio_id, order_id, current, updates)
-
-    def _fx_to_php(self, amount, currency_entity_id: Optional[UUID], at_date) -> object:
-        return self.totals_service._fx_to_php(amount, currency_entity_id, at_date)
-
-    def _compute_position(self, orders) -> dict:
-        return self.totals_service._compute_position(orders)
-
-    def _load_orders_grouped(self, portfolio_id: Optional[UUID]) -> dict:
-        return self.totals_service._load_orders_grouped(portfolio_id)
-
     def compute_totals(self, portfolio_id: Optional[UUID]) -> dict:
         return self.totals_service.compute_totals(portfolio_id)
 
     def compute_totals_by_entity(self, portfolio_id: Optional[UUID]) -> dict:
         return self.totals_service.compute_totals_by_entity(portfolio_id)
-
