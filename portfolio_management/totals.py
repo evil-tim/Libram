@@ -43,17 +43,16 @@ class TotalsService:
 
             cost_php = self._fx_to_php(cost_basis, o.cost_basis_entity_id, order_date)
             fees_php = self._fx_to_php(fees, o.fees_entity_id, order_date)
+            total_fees += fees_php
 
             if o.type == "buy":
                 new_total = held * avg_cost + shares * cost_php
                 new_held = held + shares
                 avg_cost = (new_total / new_held) if new_held > 0 else Decimal(0)
                 held = new_held
-                total_fees += fees_php
             else:
-                realized_gain += (cost_php - avg_cost) * shares - fees_php
+                realized_gain += (cost_php - avg_cost) * shares
                 held -= shares
-                total_fees += fees_php
                 if held <= 0:
                     held = Decimal(0)
                     avg_cost = Decimal(0)
