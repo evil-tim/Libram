@@ -123,8 +123,26 @@ The `LIBRAM_DB` env var (or `.env` file) holds the SQLAlchemy DSN:
 | GET | `/api/v1/portfolios/totals` | `get_all_portfolios_totals` | Aggregate totals across all portfolios |
 | GET | `/api/v1/portfolios/{portfolio_id}/totals/by-entity` | `get_portfolio_totals_by_entity` | Per-entity breakdown + aggregate totals for one portfolio |
 | GET | `/api/v1/portfolios/totals/by-entity` | `get_all_portfolios_totals_by_entity` | Per-entity breakdown + aggregate totals across all portfolios |
+| POST | `/api/v1/dividends` | `create_dividend` | Create an issuer dividend event (optional amount currency) |
+| GET | `/api/v1/dividends` | `list_dividends` | List/filter dividend events by entity and ex-date |
+| GET | `/api/v1/dividends/{dividend_id}` | `get_dividend` | Retrieve a dividend event |
+| PUT | `/api/v1/dividends/{dividend_id}` | `update_dividend` | Update a dividend event |
+| DELETE | `/api/v1/dividends/{dividend_id}` | `delete_dividend` | Delete a dividend event |
+| POST | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `create_dividend_fee` | Supply portfolio/event dividend fees |
+| GET | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `get_dividend_fee` | Retrieve portfolio/event dividend fees |
+| GET | `/api/v1/portfolios/{portfolio_id}/dividends` | `list_dividend_fees` | List dividend fees for a portfolio |
+| PUT | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `update_dividend_fee` | Update portfolio/event dividend fees |
+| DELETE | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `delete_dividend_fee` | Delete portfolio/event dividend fees |
+| GET | `/api/v1/portfolios/{portfolio_id}/dividends/totals` | `get_portfolio_dividend_totals` | Gross dividend gain and separate supplied fees for one portfolio |
+| GET | `/api/v1/portfolios/dividends/totals` | `get_all_portfolios_dividend_totals` | Gross dividend gain and separate supplied fees across portfolios |
 
 All endpoints are also exposed as MCP tools via FastMCP at `/mcp`.
+
+### Dividend totals semantics
+
+Dividend events are stored in `dividend_event`; portfolio-specific supplied fee amounts are stored in `portfolio_dividend`, uniquely scoped by portfolio and event. Eligible shares are replayed from orders strictly before the event's `ex_date`, so orders on the ex-date do not receive the dividend. Dividend amounts and supplied fees may use an entity as their currency; a null currency means PHP. Foreign amounts are converted to PHP using the event payment date, falling back to the ex-date.
+
+Portfolio totals expose gross `total_dividend_gain` and separate `total_dividend_fees`; by-entity totals expose `dividend_gain` and `dividend_fees`. Dividend fees remain separate from trading fees, realized gains, and net dividend amounts. Fee rows are user-supplied totals without a modeled source, and this feature does not provide tax calculation, receipt reconciliation, or automatic dividend ingestion.
 
 ## Datasource Plugin Pattern
 
