@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -22,10 +22,8 @@ class EntityRecord:
 
 @dataclass
 class PriceRecord:
-    # single price point
     price: Optional[Decimal] = None
     timestamp: Optional[datetime] = None
-    # or OHLC bars
     open: Optional[Decimal] = None
     high: Optional[Decimal] = None
     low: Optional[Decimal] = None
@@ -61,9 +59,35 @@ class PortfolioOrderRecord:
     entity_id: UUID
     date: Optional[datetime] = None
     shares: Optional[Decimal] = None
-    type: Optional[str] = None  # 'buy' or 'sell'
+    type: Optional[str] = None
     cost_basis: Optional[Decimal] = None
     cost_basis_entity_id: Optional[UUID] = None
+    fees: Optional[Decimal] = None
+    fees_entity_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class DividendEventRecord:
+    id: UUID
+    entity_id: UUID
+    ex_date: date
+    declaration_date: Optional[date] = None
+    record_date: Optional[date] = None
+    payment_date: Optional[date] = None
+    dividend_type: Optional[str] = None
+    amount_per_share: Optional[Decimal] = None
+    amount_per_share_entity_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class PortfolioDividendRecord:
+    id: UUID
+    portfolio_id: UUID
+    dividend_event_id: UUID
     fees: Optional[Decimal] = None
     fees_entity_id: Optional[UUID] = None
     created_at: Optional[datetime] = None

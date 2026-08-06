@@ -15,6 +15,8 @@ from portfolio_management import (
 from portfolio_management.order import OrderService
 from portfolio_management.portfolio import PortfolioService
 from portfolio_management.totals import TotalsService
+from portfolio_management.dividend import DividendService
+from portfolio_management.dividend_fees import DividendFeeService
 
 
 class PortfolioManagerClient:
@@ -26,6 +28,22 @@ class PortfolioManagerClient:
         self.portfolio_service = PortfolioService(db)
         self.order_service = OrderService(price_manager, db)
         self.totals_service = TotalsService(db)
+        self.dividend_service = DividendService(price_manager, db)
+        self.dividend_fee_service = DividendFeeService(price_manager, db)
+
+    def create_dividend(self, body): return self.dividend_service.create(body)
+    def list_dividends(self, entity_code=None, ex_date_from=None, ex_date_to=None): return self.dividend_service.list(entity_code, ex_date_from, ex_date_to)
+    def get_dividend(self, dividend_id): return self.dividend_service.get(dividend_id)
+    def update_dividend(self, dividend_id, body): return self.dividend_service.update(dividend_id, body)
+    def delete_dividend(self, dividend_id): return self.dividend_service.delete(dividend_id)
+    def create_dividend_fee(self, portfolio_id, event_id, body): return self.dividend_fee_service.create(portfolio_id, event_id, body)
+    def get_dividend_fee(self, portfolio_id, event_id): return self.dividend_fee_service.get(portfolio_id, event_id)
+    def update_dividend_fee(self, portfolio_id, event_id, body): return self.dividend_fee_service.update(portfolio_id, event_id, body)
+    def delete_dividend_fee(self, portfolio_id, event_id): return self.dividend_fee_service.delete(portfolio_id, event_id)
+    def list_dividend_fees(self, portfolio_id): return self.dividend_fee_service.list(portfolio_id)
+
+    def compute_dividend_totals(self, portfolio_id: Optional[UUID] = None):
+        return self.totals_service.compute_dividend_totals(portfolio_id)
 
     def create_portfolio(self, body: CreatePortfolioRequest) -> dict:
         return self.portfolio_service.create_portfolio(body)

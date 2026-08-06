@@ -1,7 +1,15 @@
-from .libram_types import EntityRecord, PriceRecord, TaskRecord
+from .libram_types import (
+    DividendEventRecord,
+    EntityRecord,
+    PortfolioDividendRecord,
+    PriceRecord,
+    TaskRecord,
+)
 
 __all__ = [
     "EntityRecord",
     "PriceRecord",
-    "TaskRecord"
+    "TaskRecord",
+    "DividendEventRecord",
+    "PortfolioDividendRecord",
 ]

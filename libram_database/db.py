@@ -1,6 +1,7 @@
 import json
 
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Iterable, List, Optional
 from uuid import UUID
@@ -9,8 +10,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from libram_types.libram_types import (
+    DividendEventRecord,
     EntityRecord,
     PortfolioOrderRecord,
+    PortfolioDividendRecord,
     PortfolioRecord,
     PriceRecord,
     TaskRecord,
@@ -686,6 +689,35 @@ class Database:
             updated_at=row.get("updated_at"),
         )
 
+    @staticmethod
+    def _row_to_dividend_event(row) -> DividendEventRecord:
+        event_id = row.get("id")
+        entity_id = row.get("entity_id")
+        if not isinstance(event_id, UUID):
+            raise RuntimeError("dividend event id is not a UUID")
+        if not isinstance(entity_id, UUID):
+            raise RuntimeError("dividend event entity_id is not a UUID")
+        return DividendEventRecord(
+            id=event_id, entity_id=entity_id, ex_date=row.get("ex_date"),
+            declaration_date=row.get("declaration_date"), record_date=row.get("record_date"),
+            payment_date=row.get("payment_date"), dividend_type=row.get("dividend_type"),
+            amount_per_share=row.get("amount_per_share"),
+            amount_per_share_entity_id=row.get("amount_per_share_entity_id"),
+            created_at=row.get("created_at"), updated_at=row.get("updated_at"),
+        )
+
+    @staticmethod
+    def _row_to_portfolio_dividend(row) -> PortfolioDividendRecord:
+        for field in ("id", "portfolio_id", "dividend_event_id"):
+            if not isinstance(row.get(field), UUID):
+                raise RuntimeError(f"portfolio dividend {field} is not a UUID")
+        return PortfolioDividendRecord(
+            id=row.get("id"), portfolio_id=row.get("portfolio_id"),
+            dividend_event_id=row.get("dividend_event_id"), fees=row.get("fees"),
+            fees_entity_id=row.get("fees_entity_id"), created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+
     def create_portfolio(self, name: str) -> PortfolioRecord:
         """Insert a portfolio row and return the record."""
         q = text(
@@ -743,6 +775,69 @@ class Database:
         with self.engine.begin() as conn:
             res = conn.execute(q, {"id": str(portfolio_id)})
             return res.rowcount > 0
+
+    def create_dividend_event(self, *, entity_id: UUID, declaration_date=None, ex_date=None,
+                              record_date=None, payment_date=None, dividend_type=None,
+                              amount_per_share=None, amount_per_share_entity_id=None):
+        columns = ["entity_id", "declaration_date", "ex_date", "record_date", "payment_date", "dividend_type", "amount_per_share", "amount_per_share_entity_id"]
+        q = text(f"INSERT INTO dividend_event ({', '.join(columns)}) VALUES ({', '.join(':'+c for c in columns)}) RETURNING *")
+        params = {"entity_id": str(entity_id), "declaration_date": declaration_date, "ex_date": ex_date,
+                  "record_date": record_date, "payment_date": payment_date, "dividend_type": dividend_type,
+                  "amount_per_share": amount_per_share,
+                  "amount_per_share_entity_id": str(amount_per_share_entity_id) if amount_per_share_entity_id else None}
+        with self.engine.begin() as conn: row = conn.execute(q, params).mappings().first()
+        if not row: raise RuntimeError("failed to create dividend event")
+        return self._row_to_dividend_event(row)
+
+    def get_dividend_event(self, event_id):
+        with self.engine.connect() as conn: row = conn.execute(text("SELECT * FROM dividend_event WHERE id=:id"), {"id": str(event_id)}).mappings().first()
+        return self._row_to_dividend_event(row) if row else None
+
+    def list_dividend_events(self, entity_id=None, ex_date_from=None, ex_date_to=None):
+        clauses = ["1=1"]; params = {}
+        if entity_id: clauses.append("entity_id=:entity_id"); params["entity_id"] = str(entity_id)
+        if ex_date_from: clauses.append("ex_date>=:ex_date_from"); params["ex_date_from"] = ex_date_from
+        if ex_date_to: clauses.append("ex_date<=:ex_date_to"); params["ex_date_to"] = ex_date_to
+        with self.engine.connect() as conn: rows = conn.execute(text(f"SELECT * FROM dividend_event WHERE {' AND '.join(clauses)} ORDER BY ex_date ASC, id ASC"), params).mappings().all()
+        return [self._row_to_dividend_event(r) for r in rows]
+
+    def update_dividend_event(self, event_id, **values):
+        values = {k:v for k,v in values.items() if k in {"entity_id", "declaration_date", "ex_date", "record_date", "payment_date", "dividend_type", "amount_per_share", "amount_per_share_entity_id"}}
+        if not values: return self.get_dividend_event(event_id)
+        params = {k:(str(v) if isinstance(v, UUID) else v) for k,v in values.items()}; params["id"] = str(event_id)
+        with self.engine.begin() as conn: row = conn.execute(text(f"UPDATE dividend_event SET {', '.join(f'{k}=:{k}' for k in values)}, updated_at=now() WHERE id=:id RETURNING *"), params).mappings().first()
+        return self._row_to_dividend_event(row) if row else None
+
+    def delete_dividend_event(self, event_id):
+        with self.engine.begin() as conn: return conn.execute(text("DELETE FROM dividend_event WHERE id=:id"), {"id": str(event_id)}).rowcount > 0
+
+    def create_portfolio_dividend(self, *, portfolio_id: UUID, dividend_event_id: UUID, fees: Decimal = Decimal("0"), fees_entity_id=None):
+        q = text("INSERT INTO portfolio_dividend (portfolio_id, dividend_event_id, fees, fees_entity_id) VALUES (:portfolio_id,:dividend_event_id,:fees,:fees_entity_id) RETURNING *")
+        params = {"portfolio_id": str(portfolio_id), "dividend_event_id": str(dividend_event_id), "fees": fees,
+                  "fees_entity_id": str(fees_entity_id) if fees_entity_id else None}
+        with self.engine.begin() as conn: row = conn.execute(q, params).mappings().first()
+        if not row: raise RuntimeError("failed to create portfolio dividend")
+        return self._row_to_portfolio_dividend(row)
+
+    def get_portfolio_dividend(self, portfolio_id, dividend_event_id):
+        q=text("SELECT * FROM portfolio_dividend WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id")
+        with self.engine.connect() as conn: row=conn.execute(q,{"portfolio_id":str(portfolio_id),"dividend_event_id":str(dividend_event_id)}).mappings().first()
+        return self._row_to_portfolio_dividend(row) if row else None
+
+    def update_portfolio_dividend(self, portfolio_id, dividend_event_id, **values):
+        values={k:v for k,v in values.items() if k in {"fees","fees_entity_id"}}
+        if not values: return self.get_portfolio_dividend(portfolio_id, dividend_event_id)
+        params={k:(str(v) if isinstance(v,UUID) else v) for k,v in values.items()}; params.update({"portfolio_id":str(portfolio_id),"dividend_event_id":str(dividend_event_id)})
+        q=text(f"UPDATE portfolio_dividend SET {', '.join(f'{k}=:{k}' for k in values)}, updated_at=now() WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id RETURNING *")
+        with self.engine.begin() as conn: row=conn.execute(q,params).mappings().first()
+        return self._row_to_portfolio_dividend(row) if row else None
+
+    def delete_portfolio_dividend(self, portfolio_id, dividend_event_id):
+        with self.engine.begin() as conn: return conn.execute(text("DELETE FROM portfolio_dividend WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id"), {"portfolio_id":str(portfolio_id),"dividend_event_id":str(dividend_event_id)}).rowcount > 0
+
+    def list_portfolio_dividends_for_portfolio(self, portfolio_id):
+        with self.engine.connect() as conn: rows=conn.execute(text("SELECT * FROM portfolio_dividend WHERE portfolio_id=:id ORDER BY created_at ASC, id ASC"),{"id":str(portfolio_id)}).mappings().all()
+        return [self._row_to_portfolio_dividend(r) for r in rows]
 
     # ------------------------------------------------------------------
     # portfolio_order methods

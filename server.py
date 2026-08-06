@@ -27,6 +27,9 @@ from portfolio_management import (
     PortfolioValidationError,
     UpdateOrderRequest,
     UpdatePortfolioRequest,
+    DividendEventCreateRequest, DividendEventUpdateRequest,
+    PortfolioDividendCreateRequest, PortfolioDividendUpdateRequest,
+    DividendNotFound, PortfolioDividendNotFound,
 )
 from portfolio_management.client import PortfolioManagerClient
 
@@ -629,6 +632,16 @@ async def get_all_portfolios_totals_by_entity(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/v1/portfolios/dividends/totals", operation_id="get_all_portfolios_dividend_totals")
+async def get_all_portfolios_dividend_totals(
+    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+):
+    try:
+        return portfolio_manager.compute_dividend_totals(None)
+    except PortfolioValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get(
     "/api/v1/portfolios/{portfolio_id}/totals",
     operation_id="get_portfolio_totals",
@@ -662,6 +675,73 @@ async def get_portfolio_totals_by_entity(
     except PortfolioValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+
+@app.get("/api/v1/portfolios/{portfolio_id}/dividends/totals", operation_id="get_portfolio_dividend_totals")
+async def get_portfolio_dividend_totals(
+    portfolio_id: UUID,
+    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+):
+    if not portfolio_manager.db.get_portfolio(portfolio_id):
+        raise HTTPException(status_code=404, detail=f"portfolio not found: {portfolio_id}")
+    try:
+        return portfolio_manager.compute_dividend_totals(portfolio_id)
+    except PortfolioValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/dividends", operation_id="create_dividend")
+async def create_dividend(body: DividendEventCreateRequest, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.create_dividend(body)
+    except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.get("/api/v1/dividends", operation_id="list_dividends")
+async def list_dividends(entity_code: Optional[str] = None, ex_date_from: Optional[str] = None, ex_date_to: Optional[str] = None, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.list_dividends(entity_code, ex_date_from, ex_date_to)
+    except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.get("/api/v1/dividends/{dividend_id}", operation_id="get_dividend")
+async def get_dividend(dividend_id: UUID, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.get_dividend(dividend_id)
+    except DividendNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@app.put("/api/v1/dividends/{dividend_id}", operation_id="update_dividend")
+async def update_dividend(dividend_id: UUID, body: DividendEventUpdateRequest, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.update_dividend(dividend_id, body)
+    except DividendNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.delete("/api/v1/dividends/{dividend_id}", operation_id="delete_dividend")
+async def delete_dividend(dividend_id: UUID, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: portfolio_manager.delete_dividend(dividend_id); return {"deleted": True, "id": str(dividend_id)}
+    except DividendNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@app.post("/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}", operation_id="create_dividend_fee")
+async def create_dividend_fee(portfolio_id: UUID, dividend_id: UUID, body: PortfolioDividendCreateRequest, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.create_dividend_fee(portfolio_id, dividend_id, body)
+    except PortfolioDividendNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (PortfolioNotFound, DividendNotFound) as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.get("/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}", operation_id="get_dividend_fee")
+async def get_dividend_fee(portfolio_id: UUID, dividend_id: UUID, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.get_dividend_fee(portfolio_id, dividend_id)
+    except (PortfolioDividendNotFound, PortfolioNotFound, DividendNotFound) as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@app.get("/api/v1/portfolios/{portfolio_id}/dividends", operation_id="list_dividend_fees")
+async def list_dividend_fees(portfolio_id: UUID, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.list_dividend_fees(portfolio_id)
+    except PortfolioNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@app.put("/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}", operation_id="update_dividend_fee")
+async def update_dividend_fee(portfolio_id: UUID, dividend_id: UUID, body: PortfolioDividendUpdateRequest, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: return portfolio_manager.update_dividend_fee(portfolio_id, dividend_id, body)
+    except PortfolioDividendNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.delete("/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}", operation_id="delete_dividend_fee")
+async def delete_dividend_fee(portfolio_id: UUID, dividend_id: UUID, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+    try: portfolio_manager.delete_dividend_fee(portfolio_id, dividend_id); return {"deleted": True}
+    except PortfolioDividendNotFound as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 """ MCP setup to expose PriceSchedulerClient methods as MCP endpoints under /mcp path with stateless HTTP transport """
 
