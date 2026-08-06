@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from typing import Annotated, Optional
 from uuid import UUID
 
@@ -695,7 +696,7 @@ async def create_dividend(body: DividendEventCreateRequest, portfolio_manager: P
     except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.get("/api/v1/dividends", operation_id="list_dividends")
-async def list_dividends(entity_code: Optional[str] = None, ex_date_from: Optional[str] = None, ex_date_to: Optional[str] = None, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
+async def list_dividends(entity_code: Optional[str] = None, ex_date_from: Optional[date] = None, ex_date_to: Optional[date] = None, portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client)):
     try: return portfolio_manager.list_dividends(entity_code, ex_date_from, ex_date_to)
     except PortfolioValidationError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
 
