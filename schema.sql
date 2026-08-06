@@ -145,3 +145,29 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_order_portfolio
     ON portfolio_order(portfolio_id, date);
 CREATE INDEX IF NOT EXISTS idx_portfolio_order_entity
     ON portfolio_order(entity_id);
+
+CREATE TABLE IF NOT EXISTS dividend_event (
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    entity_id uuid NOT NULL REFERENCES entity(id),
+    declaration_date date,
+    ex_date date NOT NULL,
+    record_date date,
+    payment_date date,
+    dividend_type text NOT NULL CHECK (dividend_type IN ('regular', 'special', 'return_of_capital')),
+    amount_per_share numeric NOT NULL CHECK (amount_per_share >= 0),
+    amount_per_share_entity_id uuid REFERENCES entity(id),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_dividend_event_entity_ex_date ON dividend_event(entity_id, ex_date);
+
+CREATE TABLE IF NOT EXISTS portfolio_dividend (
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    portfolio_id uuid NOT NULL REFERENCES portfolio(id) ON DELETE CASCADE,
+    dividend_event_id uuid NOT NULL REFERENCES dividend_event(id) ON DELETE CASCADE,
+    fees numeric NOT NULL DEFAULT 0 CHECK (fees >= 0),
+    fees_entity_id uuid REFERENCES entity(id),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (portfolio_id, dividend_event_id)
+);
