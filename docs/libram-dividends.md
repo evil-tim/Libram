@@ -338,6 +338,21 @@ Do not implement these in this iteration:
 
 ## Acceptance criteria
 
+## Implemented API surface
+
+The implemented REST routes are also exposed through the FastMCP bridge:
+
+- `POST`, `GET`, `PUT`, and `DELETE /api/v1/dividends` (with `{dividend_id}` for item operations)
+- `POST`, `GET`, `PUT`, and `DELETE /api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}`
+- `GET /api/v1/portfolios/{portfolio_id}/dividends` for fee-row listing
+- `GET /api/v1/portfolios/{portfolio_id}/dividends/totals` and
+  `GET /api/v1/portfolios/dividends/totals`
+
+Event responses include entity and amount-currency codes; fee responses include
+the fee-currency code. Aggregate totals are PHP values and expose gross
+`total_dividend_gain` plus separate `total_dividend_fees`. No net dividend or
+tax-rate result is calculated.
+
 The feature is complete when:
 
 - Dividend events can be created, listed, updated, and deleted.
