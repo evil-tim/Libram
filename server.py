@@ -862,7 +862,7 @@ def build_all_tasks_no_args():
     build_all_tasks(None)
 
 
-# scheduler = BackgroundScheduler()
+scheduler = BackgroundScheduler()
 # Schedule the build_all_tasks function to run at 8:00 and 20:00 every day
-# scheduler.add_job(build_all_tasks_no_args, CronTrigger(hour="8,20", minute="0"))
-# scheduler.start()
+scheduler.add_job(build_all_tasks_no_args, CronTrigger(hour="8,20", minute="0"))
+scheduler.start()
