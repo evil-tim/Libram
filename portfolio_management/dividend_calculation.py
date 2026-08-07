@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Callable, Iterable, Mapping, Optional
+from uuid import UUID
 
 from libram_types.libram_types import (
     DividendEventRecord,
@@ -18,7 +19,7 @@ from libram_types.libram_types import (
 )
 from portfolio_management import PortfolioValidationError
 
-FxLookup = Callable[[object, date], object]
+FxLookup = Callable[[UUID, date], Decimal | None]  # (currency_entity_id, conversion_date) -> PHP exchange rate
 
 
 def _as_date(value: object) -> Optional[date]:
@@ -31,13 +32,13 @@ def _decimal(value: object) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value or "0"))
 
 
-def _fee_value(fee: Optional[PortfolioDividendRecord]) -> tuple[Decimal, object]:
+def _fee_value(fee: Optional[PortfolioDividendRecord]) -> tuple[Decimal, UUID | None]:
     if fee is None:
         return Decimal("0"), None
     return _decimal(fee.fees), fee.fees_entity_id
 
 
-def _to_php(amount: Decimal, currency_id: object, conversion_date: date,
+def _to_php(amount: Decimal, currency_id: UUID | None, conversion_date: date,
             fx_lookup: FxLookup) -> Decimal:
     if currency_id is None:
         return amount
@@ -91,7 +92,7 @@ def calculate_dividend(
 def calculate_dividend_totals(
     orders: Iterable[PortfolioOrderRecord],
     events: Iterable[DividendEventRecord],
-    fees_by_event: Mapping[object, PortfolioDividendRecord] | None = None,
+    fees_by_event: Mapping[UUID, PortfolioDividendRecord] | None = None,
     fx_lookup: Optional[FxLookup] = None,
 ) -> tuple[Decimal, Decimal]:
     """Accumulate gross gains and fees for one portfolio independently."""
@@ -108,9 +109,9 @@ def calculate_dividend_totals(
 
 
 def calculate_all_portfolios_dividend_totals(
-    orders_by_portfolio: Mapping[object, Iterable[PortfolioOrderRecord]],
+    orders_by_portfolio: Mapping[UUID, Iterable[PortfolioOrderRecord]],
     events: Iterable[DividendEventRecord],
-    fees_by_portfolio: Mapping[object, Mapping[object, PortfolioDividendRecord]] | None = None,
+    fees_by_portfolio: Mapping[UUID, Mapping[UUID, PortfolioDividendRecord]] | None = None,
     fx_lookup: Optional[FxLookup] = None,
 ) -> tuple[Decimal, Decimal]:
     """Sum per-portfolio calculations without combining holdings.
