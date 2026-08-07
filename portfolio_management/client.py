@@ -31,16 +31,35 @@ class PortfolioManagerClient:
         self.dividend_service = DividendService(price_manager, db)
         self.dividend_fee_service = DividendFeeService(price_manager, db)
 
-    def create_dividend(self, body): return self.dividend_service.create(body)
-    def list_dividends(self, entity_code=None, ex_date_from=None, ex_date_to=None): return self.dividend_service.list(entity_code, ex_date_from, ex_date_to)
-    def get_dividend(self, dividend_id): return self.dividend_service.get(dividend_id)
-    def update_dividend(self, dividend_id, body): return self.dividend_service.update(dividend_id, body)
-    def delete_dividend(self, dividend_id): return self.dividend_service.delete(dividend_id)
-    def create_dividend_fee(self, portfolio_id, event_id, body): return self.dividend_fee_service.create(portfolio_id, event_id, body)
-    def get_dividend_fee(self, portfolio_id, event_id): return self.dividend_fee_service.get(portfolio_id, event_id)
-    def update_dividend_fee(self, portfolio_id, event_id, body): return self.dividend_fee_service.update(portfolio_id, event_id, body)
-    def delete_dividend_fee(self, portfolio_id, event_id): return self.dividend_fee_service.delete(portfolio_id, event_id)
-    def list_dividend_fees(self, portfolio_id): return self.dividend_fee_service.list(portfolio_id)
+    def create_dividend(self, body):
+        return self.dividend_service.create(body)
+
+    def list_dividends(self, entity_code=None, ex_date_from=None, ex_date_to=None):
+        return self.dividend_service.list(entity_code, ex_date_from, ex_date_to)
+
+    def get_dividend(self, dividend_id):
+        return self.dividend_service.get(dividend_id)
+
+    def update_dividend(self, dividend_id, body):
+        return self.dividend_service.update(dividend_id, body)
+
+    def delete_dividend(self, dividend_id):
+        return self.dividend_service.delete(dividend_id)
+
+    def create_dividend_fee(self, portfolio_id, event_id, body):
+        return self.dividend_fee_service.create(portfolio_id, event_id, body)
+
+    def get_dividend_fee(self, portfolio_id, event_id):
+        return self.dividend_fee_service.get(portfolio_id, event_id)
+
+    def update_dividend_fee(self, portfolio_id, event_id, body):
+        return self.dividend_fee_service.update(portfolio_id, event_id, body)
+
+    def delete_dividend_fee(self, portfolio_id, event_id):
+        return self.dividend_fee_service.delete(portfolio_id, event_id)
+
+    def list_dividend_fees(self, portfolio_id):
+        return self.dividend_fee_service.list(portfolio_id)
 
     def compute_dividend_totals(self, portfolio_id: Optional[UUID] = None):
         return self.totals_service.compute_dividend_totals(portfolio_id)
@@ -51,7 +70,9 @@ class PortfolioManagerClient:
     def list_portfolios(self) -> list[dict]:
         return self.portfolio_service.list_portfolios()
 
-    def update_portfolio(self, portfolio_id: UUID, body: UpdatePortfolioRequest) -> dict:
+    def update_portfolio(
+        self, portfolio_id: UUID, body: UpdatePortfolioRequest
+    ) -> dict:
         return self.portfolio_service.update_portfolio(portfolio_id, body)
 
     def delete_portfolio(self, portfolio_id: UUID) -> None:
@@ -60,7 +81,9 @@ class PortfolioManagerClient:
     def create_order(self, portfolio_id: UUID, body: CreateOrderRequest) -> dict:
         return self.order_service.create_order(portfolio_id, body)
 
-    def update_order(self, portfolio_id: UUID, order_id: UUID, body: UpdateOrderRequest) -> dict:
+    def update_order(
+        self, portfolio_id: UUID, order_id: UUID, body: UpdateOrderRequest
+    ) -> dict:
         return self.order_service.update_order(portfolio_id, order_id, body)
 
     def delete_order(self, order_id: UUID) -> None:
