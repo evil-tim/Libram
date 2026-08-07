@@ -131,9 +131,11 @@ class FundamentalsManagerClient:
         contributing_rows = [rows[i] for i in sorted(contributing_indices)]
 
         # Oldest as_of_date among contributing rows
-        as_of_dates = [
-            r.get("as_of_date") for r in contributing_rows if r.get("as_of_date")
-        ]
+        as_of_dates: list[datetime] = []
+        for r in contributing_rows:
+            as_of_date = r.get("as_of_date")
+            if isinstance(as_of_date, datetime):
+                as_of_dates.append(as_of_date)
         oldest_date = min(as_of_dates) if as_of_dates else None
         newest_date = max(as_of_dates) if as_of_dates else None
 

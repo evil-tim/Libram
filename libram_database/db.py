@@ -1102,7 +1102,7 @@ class Database:
                 return None
             return row[0]
 
-    def get_price_at_or_before(self, entity_id: UUID, target: datetime):
+    def get_price_at_or_before(self, entity_id: UUID, target: datetime) -> Decimal | None:
         """Return the most recent COALESCE(close, price) value for an entity
         at or before `target`, or None if no price row exists."""
         q = text(

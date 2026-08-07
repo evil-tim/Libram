@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 from libram_database.db import Database
-from libram_types.libram_types import PortfolioOrderRecord
+from libram_types.libram_types import PortfolioDividendRecord, PortfolioOrderRecord
 from portfolio_management import PortfolioValidationError
 from portfolio_management.dividend_calculation import calculate_dividend_totals
 
@@ -66,7 +66,7 @@ class TotalsService:
             result[entity_id] = {"code": raw.get("code"), "name": raw.get("name")}
         return result
 
-    def _fx_lookup(self, currency_id: UUID, at_date):
+    def _fx_lookup(self, currency_id: UUID, at_date: date) -> Decimal | None:
         return self.db.get_price_at_or_before(
             currency_id, datetime.combine(at_date, datetime.min.time(), tzinfo=timezone.utc)
         )
@@ -74,8 +74,10 @@ class TotalsService:
     def _dividends_for_portfolio(self, portfolio_id: UUID):
         fees = {record.dividend_event_id: record
                 for record in self.db.list_portfolio_dividends_for_portfolio(portfolio_id)}
+        events = self.db.list_dividend_events()
+        paid_events = [e for e in events if e.payment_date is not None and e.payment_date <= datetime.now(timezone.utc).date()]
         return calculate_dividend_totals(
-            self.db.get_all_orders(portfolio_id), self.db.list_dividend_events(), fees, self._fx_lookup
+            self.db.get_all_orders(portfolio_id), paid_events, fees, self._fx_lookup
         )
 
     def _dividends(self, portfolio_id: Optional[UUID]):
@@ -119,18 +121,22 @@ class TotalsService:
     def compute_totals_by_entity(self, portfolio_id: Optional[UUID]) -> dict:
         grouped = self._load_orders_grouped(portfolio_id)
         entity_map = self._entity_lookup(set(grouped))
-        fee_maps: dict[UUID, dict[object, object]] = {}
+        fee_maps: dict[UUID, dict[UUID, PortfolioDividendRecord]] = {}
         if portfolio_id is not None:
             fee_maps[portfolio_id] = {r.dividend_event_id: r for r in self.db.list_portfolio_dividends_for_portfolio(portfolio_id)}
         else:
             for portfolio in self.db.list_portfolios():
                 fee_maps[portfolio.id] = {r.dividend_event_id: r for r in self.db.list_portfolio_dividends_for_portfolio(portfolio.id)}
-        events = self.db.list_dividend_events()
+        all_events = self.db.list_dividend_events()
+        # filter to events that have already been distributed
+        paid_events = [e for e in all_events if e.payment_date is not None and e.payment_date <= datetime.now(timezone.utc).date()]
         entities = []
         for entity_id, orders in grouped.items():
             position = self._compute_position(orders)
             latest = Decimal(str(self.db.get_latest_price(entity_id) or 0))
             gain = fees = Decimal(0)
+            # filter events by entity_id
+            events = [e for e in paid_events if e.entity_id == entity_id]
             if portfolio_id is not None:
                 gain, fees = calculate_dividend_totals(orders, events, fee_maps[portfolio_id], self._fx_lookup)
             else:
@@ -148,6 +154,7 @@ class TotalsService:
                              "unrealized_gain": float(current_value - position["total_cost_basis"]),
                              "realized_gain": float(position["realized_gain"]), "dividend_gain": float(gain),
                              "dividend_fees": float(fees)})
+        print("-----------")
         totals = self.compute_totals(portfolio_id)
         return {"portfolio_id": str(portfolio_id) if portfolio_id else None, "as_of": totals["as_of"],
                 "currency": "PHP", "entities": entities,
