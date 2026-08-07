@@ -4,22 +4,55 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 __all__ = [
-    "PortfolioNotFound", "PortfolioValidationError", "OrderNotFound", "InsufficientShares",
-    "CreatePortfolioRequest", "UpdatePortfolioRequest", "CreateOrderRequest", "UpdateOrderRequest",
-    "DividendEventCreateRequest", "DividendEventUpdateRequest",
-    "PortfolioDividendCreateRequest", "PortfolioDividendUpdateRequest",
-    "DividendNotFound", "PortfolioDividendNotFound",
+    "PortfolioNotFound",
+    "PortfolioValidationError",
+    "OrderNotFound",
+    "InsufficientShares",
+    "CreatePortfolioRequest",
+    "UpdatePortfolioRequest",
+    "CreateOrderRequest",
+    "UpdateOrderRequest",
+    "DividendEventCreateRequest",
+    "DividendEventUpdateRequest",
+    "PortfolioDividendCreateRequest",
+    "PortfolioDividendUpdateRequest",
+    "DividendNotFound",
+    "PortfolioDividendNotFound",
 ]
 
-class PortfolioNotFound(Exception): pass
-class PortfolioValidationError(Exception): pass
-class OrderNotFound(Exception): pass
-class InsufficientShares(Exception): pass
-class DividendNotFound(Exception): pass
-class PortfolioDividendNotFound(Exception): pass
 
-class CreatePortfolioRequest(BaseModel): name: str = Field(..., min_length=1, max_length=255)
-class UpdatePortfolioRequest(BaseModel): name: str = Field(..., min_length=1, max_length=255)
+class PortfolioNotFound(Exception):
+    pass
+
+
+class PortfolioValidationError(Exception):
+    pass
+
+
+class OrderNotFound(Exception):
+    pass
+
+
+class InsufficientShares(Exception):
+    pass
+
+
+class DividendNotFound(Exception):
+    pass
+
+
+class PortfolioDividendNotFound(Exception):
+    pass
+
+
+class CreatePortfolioRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+
+class UpdatePortfolioRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+
 class CreateOrderRequest(BaseModel):
     entity_code: str
     date: str
@@ -29,11 +62,19 @@ class CreateOrderRequest(BaseModel):
     cost_basis_entity_code: Optional[str] = None
     fees: float = Field(0.0, ge=0)
     fees_entity_code: Optional[str] = None
+
+
 class UpdateOrderRequest(BaseModel):
-    entity_code: Optional[str] = None; date: Optional[str] = None
-    shares: Optional[float] = Field(None, gt=0); type: Optional[Literal["buy", "sell"]] = None
-    cost_basis: Optional[float] = Field(None, ge=0); cost_basis_entity_code: Optional[str] = None
-    fees: Optional[float] = Field(None, ge=0); fees_entity_code: Optional[str] = None
+    entity_code: Optional[str] = None
+    date: Optional[str] = None
+    shares: Optional[float] = Field(None, gt=0)
+    type: Optional[Literal["buy", "sell"]] = None
+    cost_basis: Optional[float] = Field(None, ge=0)
+    cost_basis_entity_code: Optional[str] = None
+    fees: Optional[float] = Field(None, ge=0)
+    fees_entity_code: Optional[str] = None
+
+
 class DividendEventCreateRequest(BaseModel):
     entity_code: str
     ex_date: date
