@@ -154,7 +154,6 @@ class TotalsService:
                              "unrealized_gain": float(current_value - position["total_cost_basis"]),
                              "realized_gain": float(position["realized_gain"]), "dividend_gain": float(gain),
                              "dividend_fees": float(fees)})
-        print("-----------")
         totals = self.compute_totals(portfolio_id)
         return {"portfolio_id": str(portfolio_id) if portfolio_id else None, "as_of": totals["as_of"],
                 "currency": "PHP", "entities": entities,
