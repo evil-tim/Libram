@@ -4,10 +4,11 @@ This datasource fetches fund net asset value (NAV) data from the BPI page.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
 import json
-from typing import Any, Dict, Optional, Tuple, Union, Iterable
+from collections.abc import Iterable
 from datetime import datetime
-from libram_types.libram_types import PriceRecord
+from typing import Any, Optional, Union
 
+from libram_types.libram_types import PriceRecord
 from price_sources.rest_datasource import RestJSONDatasource
 
 
@@ -19,7 +20,7 @@ class BPIFundDataSource(RestJSONDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-        ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         return (
             None,
             {
@@ -30,9 +31,9 @@ class BPIFundDataSource(RestJSONDatasource):
             None)
 
 
-    def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
-        if not isinstance(data, Dict):
-            raise ValueError("Expected data to be a base object containing price records")
+    def parse_price_data(self, data: Union[dict[str, Any], list]) -> Iterable[PriceRecord]:
+        if not isinstance(data, dict):
+            raise TypeError("Expected data to be a base object containing price records")
 
         # unwrap the nested fundData string
         fund_data_str = data.get("fundData")
@@ -41,8 +42,8 @@ class BPIFundDataSource(RestJSONDatasource):
 
         # parse the fund_data_str string as JSON
         fund_data = json.loads(fund_data_str)
-        if not isinstance(fund_data, Dict):
-            raise ValueError("Expected 'fundData' to be a JSON object containing price records")
+        if not isinstance(fund_data, dict):
+            raise TypeError("Expected 'fundData' to be a JSON object containing price records")
 
         # unwrap the fundDataHistory list which contains the actual price records
         fund_data_history = fund_data.get("fundDataHistory")

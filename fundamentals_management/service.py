@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Optional
 
-from fundamentals_management import ALLOWED_FUNDAMENTAL_METRICS, VALID_CONFIDENCE_LEVELS, FundamentalsNotFound, FundamentalsValidationError, FundamentalsRequest, lower_confidence
+from fundamentals_management import (
+    ALLOWED_FUNDAMENTAL_METRICS,
+    VALID_CONFIDENCE_LEVELS,
+    FundamentalsNotFound,
+    FundamentalsRequest,
+    FundamentalsValidationError,
+    lower_confidence,
+)
 from libram_database.db import Database
 from price_management.service import PriceManagerService
 
@@ -61,7 +68,7 @@ class FundamentalsManagerService:
                 raise FundamentalsValidationError(f"metric '{key}' has null value; omit the key instead")
 
         # if none of the metric keys provided are in the allowed set, raise an error
-        if not any(key in ALLOWED_FUNDAMENTAL_METRICS for key in body.metrics.keys()):
+        if not any(key in ALLOWED_FUNDAMENTAL_METRICS for key in body.metrics):
             raise FundamentalsValidationError(
                 f"no valid metric keys provided. allowed: {sorted(ALLOWED_FUNDAMENTAL_METRICS)}"
             )

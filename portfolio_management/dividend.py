@@ -5,13 +5,13 @@ from typing import Any
 from uuid import UUID
 
 from libram_database.db import Database
-from price_management.service import PriceManagerService
 from portfolio_management import (
     DividendEventCreateRequest,
     DividendEventUpdateRequest,
     DividendNotFound,
     PortfolioValidationError,
 )
+from price_management.service import PriceManagerService
 
 
 class DividendService:

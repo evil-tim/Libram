@@ -2,15 +2,16 @@
 """
 
 import argparse
+import os
 from datetime import datetime
 from typing import Optional
-import os
 
 from dotenv import load_dotenv
 
 from libram_database.db import Database
 from price_management.service import PriceManagerService
 from price_scheduler.service import PriceSchedulerService
+
 
 def main():
     parser = argparse.ArgumentParser(description="Generate monthly tasks for missing daily prices using PriceSchedulerClient")

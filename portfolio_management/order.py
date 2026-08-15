@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 from libram_database.db import Database
 from libram_types.libram_types import PortfolioOrderRecord
-from price_management.service import PriceManagerService
 from portfolio_management import (
     CreateOrderRequest,
     InsufficientShares,
@@ -16,6 +15,7 @@ from portfolio_management import (
     PortfolioValidationError,
     UpdateOrderRequest,
 )
+from price_management.service import PriceManagerService
 
 
 class OrderService:
@@ -256,7 +256,7 @@ class OrderService:
             updated_at=current.updated_at,
         )
         sequence = peer_orders + [merged]
-        sequence.sort(key=lambda o: o.date or datetime.min.replace(tzinfo=timezone.utc))
+        sequence.sort(key=lambda o: o.date or datetime.min.replace(tzinfo=UTC))
 
         held = Decimal(0)
         for o in sequence:

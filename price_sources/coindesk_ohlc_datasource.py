@@ -3,10 +3,11 @@
 This datasource fetches price data from the Coindesk API.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
-from typing import Any, Dict, Optional, Tuple, Union, Iterable
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from libram_types.libram_types import PriceRecord
+from typing import Any, Optional, Union
 
+from libram_types.libram_types import PriceRecord
 from price_sources.rest_datasource import RestJSONDatasource
 
 
@@ -18,7 +19,7 @@ class CoindeskOHLCDataSource(RestJSONDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-        ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
 
         market = config.get("market")
         instrument = config.get("instrument")
@@ -45,9 +46,9 @@ class CoindeskOHLCDataSource(RestJSONDatasource):
             },
             None)
 
-    def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
-        if not isinstance(data, Dict):
-            raise ValueError("Expected data to be a base object containing price records")
+    def parse_price_data(self, data: Union[dict[str, Any], list]) -> Iterable[PriceRecord]:
+        if not isinstance(data, dict):
+            raise TypeError("Expected data to be a base object containing price records")
 
         data_points = data.get("Data")
         if not data_points:

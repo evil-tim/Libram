@@ -3,23 +3,21 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from dependencies import get_portfolio_manager_service
 from portfolio_management import (
     CreateOrderRequest,
     CreatePortfolioRequest,
     DividendNotFound,
-    DividendNotFound,
     InsufficientShares,
     OrderNotFound,
+    PortfolioDividendNotFound,
+    PortfolioDividendUpdateRequest,
     PortfolioNotFound,
     PortfolioValidationError,
     UpdateOrderRequest,
     UpdatePortfolioRequest,
-    PortfolioDividendCreateRequest,
-    PortfolioDividendUpdateRequest,
-    PortfolioDividendNotFound,
 )
 from portfolio_management.service import PortfolioManagerService
-from dependencies import get_portfolio_manager_service
 
 router = APIRouter()
 

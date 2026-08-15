@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -35,7 +35,7 @@ class TotalsService:
         realized_gain = Decimal(0)
         for order in sorted(orders, key=lambda o: (o.date or datetime.min.replace(tzinfo=timezone.utc), str(o.id))):
             shares = order.shares or Decimal(0)
-            at_date = order.date or datetime.min.replace(tzinfo=timezone.utc)
+            at_date = order.date or datetime.min.replace(tzinfo=UTC)
             cost = self._fx_to_php(order.cost_basis or Decimal(0), order.cost_basis_entity_id, at_date)
             total_fees += self._fx_to_php(order.fees or Decimal(0), order.fees_entity_id, at_date)
             if order.type == "buy":
@@ -68,7 +68,7 @@ class TotalsService:
 
     def _fx_lookup(self, currency_id: UUID, at_date: date) -> Decimal | None:
         return self.db.get_price_at_or_before(
-            currency_id, datetime.combine(at_date, datetime.min.time(), tzinfo=timezone.utc)
+            currency_id, datetime.combine(at_date, datetime.min.time(), tzinfo=UTC)
         )
 
     def _dividends_for_portfolio(self, portfolio_id: UUID):
@@ -112,7 +112,7 @@ class TotalsService:
                     "total_current_value": float(value), "total_unrealized_gain": float(value - cost),
                     "total_realized_gain": float(realized), "total_dividend_gain": float(dividend_gain),
                     "total_dividend_fees": float(dividend_fees),
-                    "as_of": datetime.now(timezone.utc).isoformat(), "currency": "PHP"}
+                    "as_of": datetime.now(UTC).isoformat(), "currency": "PHP"}
         if portfolio_id is not None:
             portfolio = self.db.get_portfolio(portfolio_id)
             response["portfolio_name"] = portfolio.name if portfolio else None

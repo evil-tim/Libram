@@ -3,9 +3,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from price_management.service import PriceManagerService
-from price_analysis import convert_to_timezone_aware
 from dependencies import get_price_manager_service
+from price_analysis import convert_to_timezone_aware
+from price_management.service import PriceManagerService
 
 router = APIRouter()
 

@@ -3,14 +3,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from price_management.service import PriceManagerService
+from dependencies import get_price_manager_service
 from price_analysis import (
-    compute_sma,
     compute_ema,
     compute_rsi,
+    compute_sma,
     convert_to_timezone_aware,
 )
-from dependencies import get_price_manager_service
+from price_management.service import PriceManagerService
 
 router = APIRouter()
 

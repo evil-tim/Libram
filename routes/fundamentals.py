@@ -2,14 +2,14 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from dependencies import get_fundamentals_manager_service
 from fundamentals_management import (
-    FundamentalsRequest,
-    FundamentalsNotFound,
-    FundamentalsValidationError,
     VALID_CONFIDENCE_LEVELS,
+    FundamentalsNotFound,
+    FundamentalsRequest,
+    FundamentalsValidationError,
 )
 from fundamentals_management.service import FundamentalsManagerService
-from dependencies import get_fundamentals_manager_service
 
 router = APIRouter()
 

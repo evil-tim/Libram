@@ -1,9 +1,9 @@
 import json
-
+from collections.abc import Iterable
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import create_engine, text
@@ -12,8 +12,8 @@ from sqlalchemy.engine import Engine
 from libram_types.libram_types import (
     DividendEventRecord,
     EntityRecord,
-    PortfolioOrderRecord,
     PortfolioDividendRecord,
+    PortfolioOrderRecord,
     PortfolioRecord,
     PriceRecord,
     TaskRecord,
@@ -89,7 +89,7 @@ class Database:
             res = conn.execute(q, {"entity_id": entity_id, "code": entity_code, "name": entity_name, "frequency": frequency})
             rows = res.mappings().all()
 
-        out: List[EntityRecord] = []
+        out: list[EntityRecord] = []
         for r in rows:
             db_entity_id = r.get("id")
             if not db_entity_id or not isinstance(db_entity_id, UUID):
@@ -454,7 +454,7 @@ class Database:
         with self.engine.begin() as conn:
             conn.execute(q, {"task_id": str(task_id)})
 
-    def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> List[tuple[datetime, float]]:
+    def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> list[tuple[datetime, float]]:
         """Fetch the full ordered close/price series for an entity and date range.
 
         Used by moving-average computations which need the full window (no pagination).
@@ -480,7 +480,7 @@ class Database:
         with self.engine.connect() as conn:
             res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
             rows = res.all()
-        out: List[tuple[datetime, float]] = []
+        out: list[tuple[datetime, float]] = []
         for r in rows:
             ts = r[0]
             value = r[1]
@@ -605,7 +605,7 @@ class Database:
         mode: str = "latest_only",
         min_confidence: str = "low",
         as_of_date_after: Optional[str] = None,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Query fundamentals snapshots for an entity, ordered by uploaded_at DESC.
 
         mode:
@@ -734,7 +734,7 @@ class Database:
                 raise RuntimeError("failed to create portfolio")
         return self._row_to_portfolio(row)
 
-    def list_portfolios(self) -> List[PortfolioRecord]:
+    def list_portfolios(self) -> list[PortfolioRecord]:
         """Return all portfolios ordered by created_at ascending."""
         q = text("SELECT * FROM portfolio ORDER BY created_at ASC")
         with self.engine.connect() as conn:
@@ -972,7 +972,7 @@ class Database:
         date_to: Optional[datetime] = None,
         sort_by: str = "date",
         sort_order: str = "desc",
-    ) -> List[PortfolioOrderRecord]:
+    ) -> list[PortfolioOrderRecord]:
         """Query orders for a portfolio with filtering, sorting, and pagination."""
         clauses = ["po.portfolio_id = :portfolio_id"]
         params: dict = {"portfolio_id": str(portfolio_id)}
@@ -1045,7 +1045,7 @@ class Database:
             count = row.get("c") if row else None
             return int(count) if count is not None else 0
 
-    def get_orders_for_entity(self, portfolio_id: UUID, entity_id: UUID) -> List[PortfolioOrderRecord]:
+    def get_orders_for_entity(self, portfolio_id: UUID, entity_id: UUID) -> list[PortfolioOrderRecord]:
         """Return all orders for an entity in a portfolio, ordered by date ASC."""
         q = text(
             """
@@ -1059,7 +1059,7 @@ class Database:
             rows = res.mappings().all()
         return [self._row_to_order(r) for r in rows]
 
-    def get_all_orders(self, portfolio_id: UUID) -> List[PortfolioOrderRecord]:
+    def get_all_orders(self, portfolio_id: UUID) -> list[PortfolioOrderRecord]:
         """Return all orders in a portfolio, ordered by date ASC."""
         q = text(
             "SELECT * FROM portfolio_order WHERE portfolio_id = :portfolio_id ORDER BY date ASC"
@@ -1069,11 +1069,11 @@ class Database:
             rows = res.mappings().all()
         return [self._row_to_order(r) for r in rows]
 
-    def get_orders_for_portfolio(self, portfolio_id: UUID) -> List[PortfolioOrderRecord]:
+    def get_orders_for_portfolio(self, portfolio_id: UUID) -> list[PortfolioOrderRecord]:
         """Alias for get_all_orders. Kept for naming clarity from the client."""
         return self.get_all_orders(portfolio_id)
 
-    def get_all_orders_across_portfolios(self) -> List[PortfolioOrderRecord]:
+    def get_all_orders_across_portfolios(self) -> list[PortfolioOrderRecord]:
         """Return all orders across all portfolios, ordered by date ASC."""
         q = text("SELECT * FROM portfolio_order ORDER BY date ASC")
         with self.engine.connect() as conn:

@@ -1,9 +1,8 @@
 """ The price scheduler module is responsible for scheduling and running tasks to fetch price data for financial entities.
 """
-from datetime import datetime
 import random
 import signal
-
+from datetime import datetime
 from threading import Event, Thread
 
 from libram_database.db import Database

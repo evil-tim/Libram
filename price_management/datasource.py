@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Iterable
 
 from libram_types.libram_types import PriceRecord
 
