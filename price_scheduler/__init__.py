@@ -1,5 +1,5 @@
-from .client import PriceSchedulerClient
+from .service import PriceSchedulerService
 
 __all__ = [
-    "PriceSchedulerClient"
+    "PriceSchedulerService"
 ]
