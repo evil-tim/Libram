@@ -1,18 +1,18 @@
 # Libram — Agent Guide
 
-Financial price data aggregation service. Scrapes prices from multiple sources (PSE stocks, Philippine mutual funds, forex, crypto) into PostgreSQL, exposes them via a REST API and MCP server.
+Financial price data aggregation service. Scrapes prices from multiple sources (PSE stocks, Philippine mutual funds, forex, and crypto) into PostgreSQL, exposes them through a REST API and MCP server, and maintains scheduler tasks for missing prices.
 
 ## Quick Reference
 
 ```bash
-# Install dependencies (requires Python 3.14, uv)
+# Install dependencies (Python 3.14, managed by uv)
 uv sync
 
 # Run API + MCP server (dev mode, hot reload)
 LIBRAM_DB="postgresql://user:***@localhost:5432/libram" \
   uv run fastapi dev server.py --app combined_app --port 6778
 
-# Run task scheduler (processes fetch tasks from DB)
+# Run the standalone task executor
 LIBRAM_DB="postgresql://user:***@localhost:5432/libram" \
   uv run cli_scheduler.py
 
@@ -23,289 +23,231 @@ LIBRAM_DB="..." uv run cli_fetch.py --entity_code RCR --start 2025-01-01T00:00:0
 LIBRAM_DB="..." uv run cli_schedule.py [--entity_id UUID] [--min_date YYYY-MM-DDTHH:MM:SS]
 ```
 
+The local development port is **6778**. The repository uses `uv`; do not install project dependencies with system `pip`.
+
 ## Architecture
 
-Three layers, each independently runnable:
+```text
+server.py
+  FastAPI application + MCP bridge + scheduler lifecycle wiring
+  includes route modules grouped by concern:
+    routes/entities.py       entity discovery
+    routes/prices.py         price retrieval and summary
+    routes/indicators.py     SMA, EMA, and RSI
+    routes/compare.py        multi-entity comparison
+    routes/fundamentals.py   fundamentals upload/query
+    routes/portfolios.py     portfolio, order, totals, and portfolio dividend fees
+    routes/dividends.py      issuer dividend events
 
+Route dependencies are defined in dependencies.py:
+  Database
+    └─ PriceManagerService
+       ├─ FundamentalsManagerService
+       ├─ PortfolioManagerService
+       └─ PriceSchedulerService
+
+Domain packages
+  price_management/service.py       fetch/store/query orchestration
+  fundamentals_management/service.py fundamentals business logic
+  portfolio_management/service.py   coordinator for portfolio sub-services
+  price_scheduler/service.py        missing-price task generation
+  price_scheduler/executor.py       threaded task worker
+
+Supporting packages
+  price_analysis/                   pure calculations and comparison helpers
+  price_sources/                    datasource plugin implementations
+  libram_database/db.py             SQLAlchemy Core database layer
+  libram_types/                    core dataclasses
 ```
-┌─────────────────────────────────────────────────────┐
-│  server.py (FastAPI + MCP)                          │
-│  REST API  /api/v1/entities  /api/v1/prices         │
-│            /api/v1/prices/sma  /api/v1/prices/ema    │
-│            /api/v1/prices/rsi  /api/v1/prices/summary│
-│            /api/v1/compare  /api/v1/fundamentals      │
-│            /api/v1/portfolios  /api/v1/portfolios/... │
-│  MCP       /mcp                                      │
-│  Built-in APScheduler: task generation at 08:00/20:00│
-├─────────────────────────────────────────────────────┤
-│  fundamentals_management/                            │
-│    client.py — fundamentals upload/query business    │
-├─────────────────────────────────────────────────────┤
-│  portfolio_management/                               │
-│    __init__.py — request models + exceptions         │
-│    client.py    — thin coordinator for portfolio      │
-│                   order, and totals services           │
-│    portfolio.py — portfolio CRUD operations          │
-│    order.py     — order CRUD + sell validation       │
-│    totals.py    — average-cost totals + by-entity     │
-├─────────────────────────────────────────────────────┤
-│  price_analysis/                                     │
-│    moving_averages.py — SMA and EMA computations      │
-│    rsi.py             — RSI (Wilder's smoothing)     │
-│    comparison.py      — multi-entity comparison       │
-│    max_drawdown.py    — max drawdown calculation      │
-│    date_utils.py      — timezone-aware parsing        │
-├─────────────────────────────────────────────────────┤
-│  price_scheduler/                                    │
-│    client.py   — generates tasks for missing prices  │
-│    executor.py — threaded worker pool, polls for tasks│
-├─────────────────────────────────────────────────────┤
-│  price_management/                                   │
-│    client.py     — fetch/store/query orchestrator     │
-│    datasource.py — BaseDatasource ABC                 │
-├─────────────────────────────────────────────────────┤
-│  price_sources/  (plugin implementations)            │
-│    rest_datasource.py — abstract REST/JSON base      │
-│    html_datasource.py — abstract HTML base           │
-│    pse_edge_datasource.py   — PSE Edge OHLC          │
-│    coindesk_ohlc_datasource.py — CoinDesk OHLC      │
-│    ofx_forex_datasource.py — OFX forex time series   │
-│    bpi_fund_datasource.py                            │
-│    manulife_fund_datasource.py                       │
-│    slamc_fund_datasource.py                          │
-├─────────────────────────────────────────────────────┤
-│  libram_database/db.py  — SQLAlchemy CRUD layer       │
-│  libram_types/          — dataclasses: EntityRecord,  │
-│                           PriceRecord, TaskRecord     │
-└─────────────────────────────────────────────────────┘
-```
+
+`client.py` has been removed from the domain managers. The public manager classes are now named `PriceManagerService`, `FundamentalsManagerService`, `PortfolioManagerService`, and `PriceSchedulerService`, and imports should use their `service.py` modules.
+
+## Server and lifecycle
+
+`server.py` is intentionally small. It:
+
+- creates the primary FastAPI app;
+- imports and includes the routers from `routes/`;
+- configures the FastMCP bridge at `/mcp`;
+- builds `combined_app`, including both MCP and REST routes;
+- configures CORS; and
+- owns the APScheduler lifecycle.
+
+The built-in APScheduler creates task-generation jobs for 08:00 and 20:00. It is started during the FastAPI lifespan startup and shut down during lifespan shutdown. The standalone `cli_scheduler.py` is a different component: it runs the worker executor that processes open tasks. Do not confuse task generation with task execution.
+
+The dependency providers in `dependencies.py` load `LIBRAM_DB`, construct `Database`, and build the service dependency chain. Route handlers receive services through FastAPI `Depends`; they must not instantiate database or service objects directly.
 
 ## Database
 
 PostgreSQL. Schema and seed data:
 
-- `schema.sql` — tables: `datasource`, `entity`, `price`, `task`, `entity_fundamentals`, `portfolio`, `portfolio_order` (plus indexes)
-- `data.sql` — seed rows: 6 datasources, ~30 entities (PSE stocks, funds, crypto, forex)
+- `schema.sql` — tables and indexes for datasource, entity, price, task, fundamentals, portfolios, orders, dividends, and portfolio dividend fees.
+- `data.sql` — seed datasource and entity rows.
 
-The database schema is found in `schema.sql`, applied manually to the target database for now. All DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated calls are safe and new tables/indexes are created automatically.
+DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated setup is safe.
 
 ```bash
-# Manual schema setup (if needed)
 psql -U libram -d libram -f schema.sql
 psql -U libram -d libram -f data.sql
 ```
 
-The `LIBRAM_DB` env var (or `.env` file) holds the SQLAlchemy DSN:
-`postgresql://user:***@host:5432/libram`
+`LIBRAM_DB` (or `.env`) contains the SQLAlchemy DSN, for example:
+`postgresql://user:***@host:5432/libram`.
 
-## REST API Endpoints
+## REST API organization
 
-| Method | Path | Operation ID | Description |
-|---|---|---|---|
-| GET | `/api/v1/entities` | `list_available_entities` | List/filter entities |
-| GET | `/api/v1/prices` | `list_prices_for_entity` | Paginated price records |
-| GET | `/api/v1/prices/summary` | `list_price_summary` | Aggregate stats (count, min, max, avg, std_dev, return) |
-| GET | `/api/v1/prices/sma` | `get_simple_moving_average` | SMA over close/price series |
-| GET | `/api/v1/prices/ema` | `get_exponential_moving_average` | EMA over close/price series |
-| GET | `/api/v1/prices/rsi` | `get_rsi` | RSI (Wilder's smoothing) |
-| GET | `/api/v1/compare` | `compare_entities` | Multi-entity comparison with indicators |
-| POST | `/api/v1/fundamentals` | `update_entity_fundamentals` | Upload fundamentals snapshot. Allowed metric keys: `market_cap`, `pe_ratio`, `pb_ratio`, `eps`, `shares_outstanding`, `dividend_yield`, `net_income_ttm`. |
-| GET | `/api/v1/fundamentals` | `get_entity_fundamentals` | Query fundamentals (latest or all) |
-| POST | `/api/v1/portfolios` | `create_portfolio` | Create a named portfolio |
-| GET | `/api/v1/portfolios` | `list_portfolios` | List all portfolios |
-| PUT | `/api/v1/portfolios/{portfolio_id}` | `update_portfolio` | Rename a portfolio |
-| DELETE | `/api/v1/portfolios/{portfolio_id}` | `delete_portfolio` | Delete a portfolio (cascades to orders) |
-| POST | `/api/v1/portfolios/{portfolio_id}/orders` | `create_order` | Record a buy/sell order (resolves entity codes, validates sell sufficiency) |
-| GET | `/api/v1/portfolios/{portfolio_id}/orders` | `list_orders` | Paginated, filterable, sortable order listing |
-| PUT | `/api/v1/portfolios/{portfolio_id}/orders/{order_id}` | `update_order` | Update an order (re-validates sell sufficiency) |
-| DELETE | `/api/v1/portfolios/{portfolio_id}/orders/{order_id}` | `delete_order` | Delete an order |
-| GET | `/api/v1/portfolios/{portfolio_id}/totals` | `get_portfolio_totals` | Aggregate totals (average-cost method, FX-converted to PHP) |
-| GET | `/api/v1/portfolios/totals` | `get_all_portfolios_totals` | Aggregate totals across all portfolios |
-| GET | `/api/v1/portfolios/{portfolio_id}/totals/by-entity` | `get_portfolio_totals_by_entity` | Per-entity breakdown + aggregate totals for one portfolio |
-| GET | `/api/v1/portfolios/totals/by-entity` | `get_all_portfolios_totals_by_entity` | Per-entity breakdown + aggregate totals across all portfolios |
-| POST | `/api/v1/dividends` | `create_dividend` | Create an issuer dividend event (optional amount currency) |
-| GET | `/api/v1/dividends` | `list_dividends` | List/filter dividend events by entity and ex-date |
-| GET | `/api/v1/dividends/{dividend_id}` | `get_dividend` | Retrieve a dividend event |
-| PUT | `/api/v1/dividends/{dividend_id}` | `update_dividend` | Update a dividend event |
-| DELETE | `/api/v1/dividends/{dividend_id}` | `delete_dividend` | Delete a dividend event |
-| POST | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `create_dividend_fee` | Supply portfolio/event dividend fees |
-| GET | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `get_dividend_fee` | Retrieve portfolio/event dividend fees |
-| GET | `/api/v1/portfolios/{portfolio_id}/dividends` | `list_dividend_fees` | List dividend fees for a portfolio |
-| PUT | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `update_dividend_fee` | Update portfolio/event dividend fees |
-| DELETE | `/api/v1/portfolios/{portfolio_id}/dividends/{dividend_id}` | `delete_dividend_fee` | Delete portfolio/event dividend fees |
-| GET | `/api/v1/portfolios/{portfolio_id}/dividends/totals` | `get_portfolio_dividend_totals` | Gross dividend gain and separate supplied fees for one portfolio |
-| GET | `/api/v1/portfolios/dividends/totals` | `get_all_portfolios_dividend_totals` | Gross dividend gain and separate supplied fees across portfolios |
+All REST endpoints are under `/api/v1` and are also exposed as MCP tools through `/mcp`.
 
-All endpoints are also exposed as MCP tools via FastMCP at `/mcp`.
+| Route module | Concern | Main endpoints |
+|---|---|---|
+| `routes/entities.py` | Entity discovery | `/entities` |
+| `routes/prices.py` | Price records and summaries | `/prices`, `/prices/summary` |
+| `routes/indicators.py` | Technical indicators | `/prices/sma`, `/prices/ema`, `/prices/rsi` |
+| `routes/compare.py` | Cross-entity analysis | `/compare` |
+| `routes/fundamentals.py` | Fundamental snapshots | `/fundamentals` |
+| `routes/portfolios.py` | Portfolios, orders, totals, portfolio dividend fees | `/portfolios/...` |
+| `routes/dividends.py` | Issuer dividend events | `/dividends` |
 
-### Dividend totals semantics
+When adding an endpoint, put it in the route module matching its concern and keep the handler a thin HTTP adapter: parse/validate request data, call a service or pure domain function, translate expected domain errors to `HTTPException`, and return the result.
 
-Dividend events are stored in `dividend_event`; portfolio-specific supplied fee amounts are stored in `portfolio_dividend`, uniquely scoped by portfolio and event. Eligible shares are replayed from orders strictly before the event's `ex_date`, so orders on the ex-date do not receive the dividend. Dividend amounts and supplied fees may use an entity as their currency; a null currency means PHP. Foreign amounts are converted to PHP using the event payment date, falling back to the ex-date.
+## Task system
 
-Portfolio totals expose gross `total_dividend_gain` and separate `total_dividend_fees`; by-entity totals expose `dividend_gain` and `dividend_fees`. Dividend fees remain separate from trading fees, realized gains, and net dividend amounts. Fee rows are user-supplied totals without a modeled source, and this feature does not provide tax calculation, receipt reconciliation, or automatic dividend ingestion.
+The scheduler creates `task` rows for missing price ranges; the executor processes them:
 
-## Datasource Plugin Pattern
+1. `cli_schedule.py` or the server's APScheduler job scans entities and creates `OPEN` tasks.
+2. `cli_scheduler.py` / `price_scheduler/executor.py` polls for `OPEN` tasks, locks them as `IN_PROGRESS`, fetches prices, then marks them `COMPLETED` or `FAILED`.
+3. Failed tasks use exponential backoff (`retry_delay * 3^retry_count`).
 
-Each datasource subclasses `BaseDatasource` and implements `fetch_prices(entity, start, end) -> Iterable[PriceRecord]`.
+`price_scheduler/service.py` contains task-generation logic. `price_scheduler/executor.py` contains worker execution logic. The server lifecycle only hooks in the task-generation scheduler; it does not replace the standalone executor.
 
-For REST/JSON sources, extend `RestJSONDatasource` instead and implement:
-- `build_request_params(entity, start, end, config)` — return `(url, query_params, body)`
-- `parse_price_data(data)` — return `Iterable[PriceRecord]`
+## Datasource plugin pattern
 
-Datasources are loaded dynamically from the `datasource.implementation` column (format: `module.path:ClassName`). Entity-level config is merged on top of datasource-level config.
+Each datasource subclasses `BaseDatasource` and implements:
+`fetch_prices(entity, start, end) -> Iterable[PriceRecord]`.
 
-## Task System
+REST/JSON sources extend `RestJSONDatasource` and implement `build_request_params(...)` and `parse_price_data(...)`. Datasources are loaded dynamically from `datasource.implementation` (`module.path:ClassName`); entity configuration is merged over datasource configuration.
 
-The scheduler creates `task` rows for date ranges with missing prices. The executor picks them up:
+Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_edge_datasource.py`, `coindesk_ohlc_datasource.py`, `ofx_forex_datasource.py`, `bpi_fund_datasource.py`, `manulife_fund_datasource.py`, and `slamc_fund_datasource.py`.
 
-1. **cli_schedule.py** / **server.py** APScheduler — scans entities, creates `OPEN` tasks
-2. **cli_scheduler.py** / **executor.py** — worker threads poll for `OPEN` tasks, lock them (`IN_PROGRESS`), fetch prices, mark `COMPLETED` or `FAILED`
-3. Exponential backoff on failure: `retry_delay * 3^retry_count`
+## Environment variables
 
-Task granularity: daily (last week), weekly (last month), monthly (historical backfill).
-
-## Environment Variables
-
-| Variable | Required | Description |
+| Variable | Required | Default / purpose |
 |---|---|---|
 | `LIBRAM_DB` | Yes | PostgreSQL connection string |
-| `LIBRAM_SCHEDULER_MAX_RETRIES` | No | Max task retries (default: 5) |
-| `LIBRAM_SCHEDULER_RETRY_DELAY_SECONDS` | No | Base retry delay (default: 300) |
-| `LIBRAM_SCHEDULER_THREADS` | No | Worker thread count (default: 8) |
-| `LIBRAM_SCHEDULER_MAX_TASKS_PER_DATASOURCE` | No | Rate limit per source (default: 4) |
-| `LIBRAM_SCHEDULER_POLL_INTERVAL_SECONDS` | No | Poll interval (default: 60) |
-| `LIBRAM_SCHEDULER_POLL_JITTER_SECONDS` | No | Random jitter (default: 30) |
+| `LIBRAM_SCHEDULER_MAX_RETRIES` | No | `5` |
+| `LIBRAM_SCHEDULER_RETRY_DELAY_SECONDS` | No | `300` |
+| `LIBRAM_SCHEDULER_THREADS` | No | `8` |
+| `LIBRAM_SCHEDULER_MAX_TASKS_PER_DATASOURCE` | No | `4` |
+| `LIBRAM_SCHEDULER_POLL_INTERVAL_SECONDS` | No | `60` |
+| `LIBRAM_SCHEDULER_POLL_JITTER_SECONDS` | No | `30` |
 
-## Project Conventions
+## Project conventions
 
-- **Python**: 3.14, managed by `uv` (see `.python-version`)
-- **Port**: 6778 for local dev
-- **ORM**: SQLAlchemy Core (no declarative models), raw SQL via `text()`
-- **Types**: Dataclasses in `libram_types/`, not Pydantic models (except request models in `server.py`)
-- **Analysis**: Pure functions in `price_analysis/` — no DB dependency, operate on `(timestamp, value)` lists
-- **No tests directory** — contributions welcome
-- **Docker**: `Dockerfile` + `docker-compose.yml` exist for production; supervisor runs both server and scheduler in one container
+- Python 3.14, managed by `uv` (`.python-version`).
+- SQLAlchemy Core, not a declarative ORM; raw SQL uses `text()`.
+- Core domain types are dataclasses in `libram_types/`. Pydantic models are used for HTTP request models, primarily in `fundamentals_management/models.py` and `portfolio_management/models.py`.
+- Pure analysis functions live in `price_analysis/` and should not depend on the database or FastAPI.
+- There is currently no tests directory.
+- Docker production setup is in `Dockerfile` and `docker-compose.yml`; supervisor runs the server and standalone scheduler executor in one container.
+- Ruff cleanup is part of the current codebase standard: preserve clean imports, formatting, and lint-compatible code.
 
-## Architectural Rules
+## Architectural rules
 
-### server.py is a thin routing layer
+### Keep HTTP routing thin
 
-server.py contains ONLY:
-- FastAPI app setup, dependency injection (`Depends`), lifespan management
-- Route handlers that validate input, delegate to domain modules, and return results
-- MCP bridge setup (`FastMCP.from_fastapi`)
-- APScheduler wiring (task generation cron jobs)
+Route modules contain HTTP concerns only. Business logic, database access, calculations, datasource loading, and orchestration belong in domain services or pure modules. If a function can be tested without importing FastAPI, it usually does not belong in `routes/` or `server.py`.
 
-server.py must NOT contain:
-- Business logic, computation, or data transformation
-- Helper functions that don't directly depend on FastAPI request/response objects
-- Imports of `statistics`, `math`, `re`, `asyncio` (for non-route concerns)
+### Use service dependency injection
 
-**Litmus test:** if a function can be unit-tested without importing FastAPI, it doesn't belong in server.py.
-
-### Services are injected via FastAPI Depends
-
-Domain clients (`PriceManagerClient`, `FundamentalsManagerClient`, `PriceSchedulerClient`, `Database`) are **never instantiated directly** in route handlers. They are created through a `Depends` chain defined in server.py:
+Services are constructed by the provider chain in `dependencies.py`:
 
 ```python
-# Provider functions (defined once in server.py)
-async def get_price_manager_client(
+async def get_price_manager_service(
     db: Database = Depends(get_database),
-) -> PriceManagerClient:
-    return PriceManagerClient(db)
+) -> PriceManagerService:
+    return PriceManagerService(db)
+```
 
-# Route handlers receive clients via Depends — never construct them manually
-@app.get("/api/v1/prices")
+A route consumes the provider rather than constructing a service:
+
+```python
+@router.get("/api/v1/prices")
 async def list_prices(
     ...,
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_service),
 ):
-    ...
+    return price_manager.query_prices(...)
 ```
 
-When adding a new domain package, add a corresponding `get_*_client` provider in server.py and inject it via `Depends` in every route that needs it. If the new client depends on an existing one (e.g. needs `PriceManagerClient`), chain them:
-
-```python
-async def get_new_client(
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
-    db: Database = Depends(get_database),
-) -> NewClient:
-    return NewClient(price_manager, db)
-```
+When a new domain service depends on another service, extend `dependencies.py` and chain providers there. Do not duplicate construction logic across route modules.
 
 ### Where code belongs
 
-| Code type | Destination | Example |
-|---|---|---|
-| Pure computation (no DB, no I/O) | `price_analysis/<module>.py` | SMA, RSI, max drawdown, ranking |
-| Business logic that talks to DB/API | Domain package `client.py` | `price_management/client.py`, `fundamentals_management/client.py` |
-| HTTP route handler (thin wrapper) | `server.py` | Parse query params, call domain module, return dict |
-| Datasource plugin | `price_sources/<name>_datasource.py` | PSE Edge, CoinGecko, BPI fund |
-| CLI entrypoint | `cli_*.py` | `cli_fetch.py`, `cli_schedule.py` |
+| Code type | Destination |
+|---|---|
+| Pure computation, no DB/I/O | `price_analysis/<module>.py` |
+| DB/API business logic | Relevant domain `service.py` or focused domain module |
+| Request models and domain exceptions | Relevant domain package (`models.py`, `__init__.py`, or focused module) |
+| HTTP route handler | `routes/<concern>.py` |
+| FastAPI/MCP/lifecycle assembly | `server.py` |
+| Dependency providers | `dependencies.py` |
+| Datasource plugin | `price_sources/<name>_datasource.py` |
+| CLI entrypoint | `cli_*.py` |
 
-### New modules over monoliths
+### Prefer focused modules
 
-When adding a new feature that introduces significant logic:
-- Create a new module in the appropriate package (e.g. `price_analysis/comparison.py`)
-- Export public functions from the package `__init__.py`
-- Keep the route handler in server.py under ~25 lines
-- If the feature spans multiple concerns (parsing + computation + ranking), split into separate functions within the module — don't create one giant function
+For a feature spanning multiple concerns, split parsing, computation, and orchestration into focused functions/modules. Add public exports in the relevant package `__init__.py` where appropriate. Do not grow `server.py` into a monolith, and do not put business logic into a route handler merely because it is endpoint-specific.
 
-### Anti-pattern: "route handler as implementation"
-
-```
-# BAD — computation lives in server.py, service instantiated inline
-@app.get("/api/v1/compare")
-async def compare_entities(...):
-    pm = PriceManagerClient(db)   # don't do this
-    # 200 lines of parsing, fetching, computing, ranking
-    ...
-
-# GOOD — computation lives in domain module, service injected via Depends
-from price_analysis.comparison import build_comparison_payload
-
-@app.get("/api/v1/compare")
-async def compare_entities(
-    ...,
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
-):
-    return build_comparison_payload(entity_codes, start, end, indicators, price_manager)
-```
-
-## Key Files
+## Key files
 
 | File | Purpose |
 |---|---|
-| `server.py` | FastAPI app, MCP bridge, scheduled task generation, request routing |
-| `cli_scheduler.py` | Standalone scheduler executor (worker process for tasks) |
-| `cli_schedule.py` | CLI to manually generate scheduler tasks |
-| `cli_fetch.py` | CLI to manually fetch prices for a specific entity/date range |
-| `main.py` | Minimal entrypoint / project placeholder |
-| `fundamentals_management/client.py` | Fundamentals upload/query business logic |
-| `portfolio_management/__init__.py` | Portfolio/order request models and exceptions |
-| `portfolio_management/client.py` | Thin coordinator that delegates portfolio, order, and totals operations |
-| `portfolio_management/portfolio.py` | Portfolio CRUD service |
-| `portfolio_management/order.py` | Order CRUD, entity resolution, and sell-sufficiency validation |
-| `portfolio_management/totals.py` | Average-cost totals and per-entity breakdown computation |
-| `price_management/client.py` | Core fetch/store/query orchestrator for entities/prices |
-| `price_management/datasource.py` | BaseDatasource ABC for plugin datasources |
-| `price_sources/rest_datasource.py` | Abstract REST/JSON datasource base |
-| `price_sources/pse_edge_datasource.py` | PSE Edge OHLC datasource implementation |
-| `price_sources/coingecko_ohlc_datasource.py` | CoinGecko OHLC datasource implementation |
-| `price_sources/coindesk_ohlc_datasource.py` | CoinDesk OHLC datasource implementation |
-| `price_sources/ofx_forex_datasource.py` | OFX forex time series datasource |
-| `price_sources/bpi_fund_datasource.py` | BPI fund datasource implementation |
-| `price_sources/manulife_fund_datasource.py` | Manulife fund datasource implementation |
-| `price_sources/slamc_fund_datasource.py` | SLAMC fund datasource implementation |
-| `price_sources/html_datasource.py` | HTML scraper datasource implementation |
-| `price_scheduler/client.py` | Task generation logic for missing price ranges |
-| `price_scheduler/executor.py` | Worker executor polling and task processing |
-| `price_analysis/moving_averages.py` | SMA and EMA calculation utilities |
-| `price_analysis/rsi.py` | RSI calculation utilities |
-| `price_analysis/comparison.py` | Multi-entity comparison and indicator payload builder |
-| `price_analysis/max_drawdown.py` | Max drawdown calculation utilities |
-| `price_analysis/date_utils.py` | Timezone-aware date parsing and conversion helpers |
+| `server.py` | FastAPI/MCP assembly and APScheduler lifecycle |
+| `dependencies.py` | FastAPI service/database dependency providers |
+| `routes/*.py` | REST routes grouped by concern |
+| `cli_scheduler.py` | Standalone threaded scheduler executor |
+| `cli_schedule.py` | Manual task generation CLI |
+| `cli_fetch.py` | Manual price-fetch CLI |
+| `fundamentals_management/service.py` | Fundamentals business logic |
+| `fundamentals_management/models.py` | Fundamentals request models |
+| `portfolio_management/service.py` | Portfolio manager coordinator |
+| `portfolio_management/models.py` | Portfolio request models |
+| `portfolio_management/portfolio.py` | Portfolio CRUD |
+| `portfolio_management/order.py` | Order CRUD and sell validation |
+| `portfolio_management/totals.py` | Average-cost totals and per-entity breakdowns |
+| `portfolio_management/dividend.py` | Issuer dividend operations |
+| `portfolio_management/dividend_fees.py` | Portfolio/event dividend fee operations |
+| `price_management/service.py` | Price fetch/store/query orchestration |
+| `price_management/datasource.py` | Base datasource abstraction |
+| `price_scheduler/service.py` | Missing-price task generation |
+| `price_scheduler/executor.py` | Worker polling and task processing |
+| `price_analysis/` | SMA, EMA, RSI, comparison, drawdown, and date utilities |
+| `price_sources/` | Datasource implementations |
 | `libram_database/db.py` | Database layer and SQLAlchemy helpers |
-| `libram_types/libram_types.py` | Core dataclasses for entities, prices, tasks |
-| `schema.sql` | Database schema DDL for all tables and indexes |
-| `data.sql` | Seed data for datasources and entities |
+| `libram_types/` | Core dataclasses |
+| `schema.sql` | Database DDL |
+| `data.sql` | Seed data |
+| `docs/server_refactor_plan.md` | Server refactor design notes |
+
+## Anti-pattern
+
+```python
+# Bad: service construction and business logic inside a route
+@router.get("/api/v1/compare")
+async def compare(...):
+    db = Database(os.environ["LIBRAM_DB"])
+    manager = PriceManagerService(db)
+    # fetch, parse, rank, and transform here
+```
+
+```python
+# Good: provider-injected service and domain function
+@router.get("/api/v1/compare")
+async def compare(
+    ...,
+    price_manager: PriceManagerService = Depends(get_price_manager_service),
+):
+    return await build_comparison_payload(..., price_manager=price_manager)
+```
+
+When modifying this repository, update the relevant focused module and preserve the separation between route assembly, service orchestration, pure analysis, and scheduler execution.
