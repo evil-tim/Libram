@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from libram_database.db import Database
 from price_management.service import PriceManagerService
-from price_scheduler.client import PriceSchedulerClient
+from price_scheduler.service import PriceSchedulerService
 
 def main():
     parser = argparse.ArgumentParser(description="Generate monthly tasks for missing daily prices using PriceSchedulerClient")
@@ -32,7 +32,7 @@ def build_all_tasks(args: Optional[argparse.Namespace]):
 
     db = Database(db_string)
     price_manager_client = PriceManagerService(db)
-    price_scheduler_client = PriceSchedulerClient(price_manager_client, db)
+    price_scheduler_client = PriceSchedulerService(price_manager_client, db)
 
     all_created_tasks = []
 

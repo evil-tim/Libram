@@ -14,7 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from libram_database.db import Database
 from price_management.service import PriceManagerService
-from price_scheduler.client import PriceSchedulerClient
+from price_scheduler.service import PriceSchedulerService
 from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_timezone_aware
 from price_analysis.comparison import build_comparison_payload
 from fundamentals_management import FundamentalsRequest, FundamentalsNotFound, FundamentalsValidationError, VALID_CONFIDENCE_LEVELS
@@ -70,8 +70,8 @@ async def get_portfolio_manager_client(
 async def get_scheduler_client(
     price_manager: PriceManagerService = Depends(get_price_manager_client),
     db: Database = Depends(get_database),
-) -> PriceSchedulerClient:
-    return PriceSchedulerClient(price_manager, db)
+) -> PriceSchedulerService:
+    return PriceSchedulerService(price_manager, db)
 
 """ FastAPI lifecycle """
 

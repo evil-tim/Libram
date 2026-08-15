@@ -76,7 +76,7 @@ def _day_has_missing_prices(prices: Iterable[PriceRecord], day_start: datetime, 
 
     return True  # No price found for this day
 
-class PriceSchedulerClient:
+class PriceSchedulerService:
     """Client that generates monthly tasks for missing daily prices.
 
     Construct with a DSN string; a `Database` is created internally.
