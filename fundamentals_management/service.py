@@ -6,8 +6,8 @@ from libram_database.db import Database
 from price_management.service import PriceManagerService
 
 
-class FundamentalsManagerClient:
-    """High-level client to fetch/store/query entity fundamentals data.
+class FundamentalsManagerService:
+    """High-level service to fetch/store/query entity fundamentals data.
     """
 
     def __init__(self, price_manager_client: PriceManagerService, db: Database):
