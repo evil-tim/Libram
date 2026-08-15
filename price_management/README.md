@@ -6,7 +6,7 @@ implementations, stores it into a Postgres database (schema provided in
 
 Usage summary
 
-- Construct `PriceManagerClient` with a Postgres DSN.
+- Construct `PriceManagerService` with a Postgres DSN.
 - Call `fetch_and_store(entity_id, entity_code, start, end)` to fetch an entity's
   prices from start to end timestamp. Specify the entity by its id or code.
 - Call `query_entities(entity_id, entity_code, entity_name, freqency)` to return stored
@@ -25,7 +25,7 @@ the form `module.path:ClassName` (or just `module.path` to use `Datasource`).
 Example
 
 ```py
-client = PriceManagerClient("postgresql://user:pass@localhost:5432/mydb")
+client = PriceManagerService("postgresql://user:pass@localhost:5432/mydb")
 entities = client.query_entities()
 inserted = client.fetch_and_store("__UUID__", "BTCUSD", datetime(2023,1,1), datetime(2023,1,31))
 print("inserted", inserted)

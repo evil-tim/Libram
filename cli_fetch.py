@@ -1,4 +1,4 @@
-"""Use PriceManagerClient to fetch/store/query financial data using command line parameters
+"""Use PriceManagerService to fetch/store/query financial data using command line parameters
 """
 
 import argparse
@@ -13,7 +13,7 @@ from price_management.service import PriceManagerService
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch and store financial data using PriceManagerClient")
+    parser = argparse.ArgumentParser(description="Fetch and store financial data using PriceManagerService")
     parser.add_argument("--entity_code", required=False, help="Entity code to fetch data for")
     parser.add_argument("--entity_id", required=False, help="Entity id to fetch data for")
     # datetime range in YYYY-MM-DDTHH:MM:SS format
