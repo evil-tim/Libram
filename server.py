@@ -1,3 +1,8 @@
+import logging
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.base import STATE_RUNNING
+from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
@@ -5,14 +10,43 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
 from fastmcp.utilities.lifespan import combine_lifespans
 
+from cli_schedule import build_all_tasks
 
+logger = logging.getLogger(f"uvicorn.{__name__}")
+
+# scheduler setup
+def build_all_tasks_no_args():
+    build_all_tasks(None)
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(build_all_tasks_no_args, CronTrigger(hour="8,20", minute="0"))
+
+# server lifecycle events for startup and shutdown
 def startup(_app: FastAPI):
     load_dotenv()
-    print("Starting up server...")
+    logger.info("Starting up server...")
+    try:
+        # Start the scheduler as part of the app startup lifecycle.
+        # Guard against double-starts (e.g. autoreload) by checking state.
+        logger.info("Starting scheduler...")
+        if scheduler.state != STATE_RUNNING:
+            scheduler.start()
+            logger.info("Scheduler started.")
+        else:
+            logger.info("Scheduler already running.")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {e}")
 
 
 def shutdown(_app: FastAPI):
-    print("Shutting down server...")
+    logger.info("Shutting down server...")
+    try:
+        # Shut down the scheduler during app shutdown. Use non-blocking wait.
+        logger.info("Shutting down scheduler...")
+        scheduler.shutdown(wait=False)
+        logger.info("Scheduler shutdown initiated.")
+    except Exception as e:
+        logger.error(f"Failed to shutdown scheduler: {e}")
 
 
 @asynccontextmanager
@@ -56,7 +90,7 @@ combined_app = FastAPI(
     lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
 )
 
-
+# CORS middleware setup for the combined app
 combined_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,18 +98,3 @@ combined_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-
-from cli_schedule import build_all_tasks
-
-
-def build_all_tasks_no_args():
-    build_all_tasks(None)
-
-
-# Create and start the scheduler with the same schedule as before
-scheduler = BackgroundScheduler()
-scheduler.add_job(build_all_tasks_no_args, CronTrigger(hour="8,20", minute="0"))
-scheduler.start()
