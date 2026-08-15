@@ -19,7 +19,7 @@ from portfolio_management.dividend import DividendService
 from portfolio_management.dividend_fees import DividendFeeService
 
 
-class PortfolioManagerClient:
+class PortfolioManagerService:
     """High-level client for portfolio and order management."""
 
     def __init__(self, price_manager: PriceManagerService, db: Database):
