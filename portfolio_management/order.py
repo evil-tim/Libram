@@ -7,7 +7,7 @@ from uuid import UUID
 
 from libram_database.db import Database
 from libram_types.libram_types import PortfolioOrderRecord
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 from portfolio_management import (
     CreateOrderRequest,
     InsufficientShares,
@@ -21,7 +21,7 @@ from portfolio_management import (
 class OrderService:
     """Order CRUD and validation operations."""
 
-    def __init__(self, price_manager: PriceManagerClient, db: Database):
+    def __init__(self, price_manager: PriceManagerService, db: Database):
         self.price_manager = price_manager
         self.db = db
 

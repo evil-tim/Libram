@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID
 
 from libram_database.db import Database
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 
 from portfolio_management import (
     CreateOrderRequest,
@@ -22,7 +22,7 @@ from portfolio_management.dividend_fees import DividendFeeService
 class PortfolioManagerClient:
     """High-level client for portfolio and order management."""
 
-    def __init__(self, price_manager: PriceManagerClient, db: Database):
+    def __init__(self, price_manager: PriceManagerService, db: Database):
         self.price_manager = price_manager
         self.db = db
         self.portfolio_service = PortfolioService(db)

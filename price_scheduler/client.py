@@ -4,7 +4,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from libram_database.db import Database
-from price_management import PriceManagerClient
+from price_management import PriceManagerService
 
 from libram_types.libram_types import PriceRecord, TaskRecord
 
@@ -82,7 +82,7 @@ class PriceSchedulerClient:
     Construct with a DSN string; a `Database` is created internally.
     """
 
-    def __init__(self, price_manager_client: PriceManagerClient, db: Database):
+    def __init__(self, price_manager_client: PriceManagerService, db: Database):
         self.price_manager_client = price_manager_client
         self.db = db
 

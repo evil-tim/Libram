@@ -1,7 +1,7 @@
 from .datasource import BaseDatasource
-from .client import PriceManagerClient
+from .service import PriceManagerService
 
 __all__ = [
     "BaseDatasource",
-    "PriceManagerClient",
+    "PriceManagerService",
 ]

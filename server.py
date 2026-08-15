@@ -13,7 +13,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from libram_database.db import Database
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 from price_scheduler.client import PriceSchedulerClient
 from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_timezone_aware
 from price_analysis.comparison import build_comparison_payload
@@ -52,23 +52,23 @@ async def get_database(db_string: str = Depends(get_db_string)) -> Database:
 
 async def get_price_manager_client(
     db: Database = Depends(get_database),
-) -> PriceManagerClient:
-    return PriceManagerClient(db)
+) -> PriceManagerService:
+    return PriceManagerService(db)
 
 async def get_fundamentals_manager_client(
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
     db: Database = Depends(get_database),
 ) -> FundamentalsManagerClient:
     return FundamentalsManagerClient(price_manager, db)
 
 async def get_portfolio_manager_client(
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
     db: Database = Depends(get_database),
 ) -> PortfolioManagerClient:
     return PortfolioManagerClient(price_manager, db)
 
 async def get_scheduler_client(
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
     db: Database = Depends(get_database),
 ) -> PriceSchedulerClient:
     return PriceSchedulerClient(price_manager, db)
@@ -122,7 +122,7 @@ async def list_entities(
     entity_name: Annotated[
         Optional[str], Query(description="Filter by partial entity name")
     ] = None,
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     return price_manager.query_entities(entity_id, entity_code, entity_name, None)
 
@@ -153,7 +153,7 @@ async def list_prices(
     size: Annotated[
         int, Query(description="Number of items per page, default is 10")
     ] = 10,
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     entity = price_manager.db.get_entity_by_id_raw(entity_id)
     if not entity:
@@ -188,7 +188,7 @@ async def list_price_summary(
             description="End date for the date range, exclusive. Automatically converted to the entity's timezone. Format: YYYY-MM-DDTHH:MM:SS"
         ),
     ],
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     entity = price_manager.db.get_entity_by_id_raw(entity_id)
     if not entity:
@@ -236,7 +236,7 @@ async def get_simple_moving_average(
             description="Window size in number of data points (e.g. 20, 50, 200). Must be >= 2.",
         ),
     ],
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     if period < 2:
         raise HTTPException(status_code=400, detail="period must be >= 2")
@@ -288,7 +288,7 @@ async def get_exponential_moving_average(
             description="Window size in number of data points (e.g. 20, 50, 200). Must be >= 2.",
         ),
     ],
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     if period < 2:
         raise HTTPException(status_code=400, detail="period must be >= 2")
@@ -340,7 +340,7 @@ async def get_rsi(
             description="RSI lookback period in number of data points (e.g. 14). Must be >= 2.",
         ),
     ],
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     if period < 2:
         raise HTTPException(status_code=400, detail="period must be >= 2")
@@ -401,7 +401,7 @@ async def compare_entities(
         str,
         Query(description="Baseline for relative calculations: 'median' (default) or 'first'."),
     ] = "median",
-    price_manager: PriceManagerClient = Depends(get_price_manager_client),
+    price_manager: PriceManagerService = Depends(get_price_manager_client),
 ):
     """Compare multiple entities with relative rankings."""
     try:

@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 
 from libram_database.db import Database
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 from price_scheduler.executor import PriceSchedulerExecutor
 
 
@@ -38,7 +38,7 @@ def main():
         args["jitter"] = int(jitter)
 
     db = Database(db_string)
-    price_manager_client = PriceManagerClient(db)
+    price_manager_client = PriceManagerService(db)
     price_scheduler_executor = PriceSchedulerExecutor(price_manager_client, db, **args)
 
     price_scheduler_executor.setup_signal_handlers()

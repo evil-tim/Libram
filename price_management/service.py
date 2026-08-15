@@ -28,7 +28,7 @@ def _load_datasource(implementation: str, config: dict) -> BaseDatasource:
         raise TypeError("Datasource implementation must subclass BaseDatasource")
     return inst
 
-class PriceManagerClient:
+class PriceManagerService:
     """High-level client to fetch/store/query financial data.
 
     The constructor accepts either a `Database` instance or a DSN string
