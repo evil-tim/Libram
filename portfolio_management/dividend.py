@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from libram_database.db import Database
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 from portfolio_management import (
     DividendEventCreateRequest,
     DividendEventUpdateRequest,
@@ -17,7 +17,7 @@ from portfolio_management import (
 class DividendService:
     """CRUD operations for issuer-level dividend events."""
 
-    def __init__(self, price_manager: PriceManagerClient, db: Database):
+    def __init__(self, price_manager: PriceManagerService, db: Database):
         self.price_manager = price_manager
         self.db = db
 

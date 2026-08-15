@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from libram_database.db import Database
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 from portfolio_management import (
     DividendNotFound,
     PortfolioDividendCreateRequest,
@@ -20,7 +20,7 @@ from portfolio_management import (
 class DividendFeeService:
     """CRUD for fees attached to a portfolio/dividend-event pair."""
 
-    def __init__(self, price_manager: PriceManagerClient, db: Database):
+    def __init__(self, price_manager: PriceManagerService, db: Database):
         self.price_manager = price_manager
         self.db = db
 
