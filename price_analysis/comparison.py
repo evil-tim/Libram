@@ -4,16 +4,13 @@ import asyncio
 import re
 import statistics
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from price_analysis.date_utils import convert_to_timezone_aware
 from price_analysis.max_drawdown import compute_max_drawdown
 from price_analysis.moving_averages import compute_ema, compute_sma
 from price_analysis.rsi import compute_rsi
-
-if TYPE_CHECKING:
-    from price_management.service import PriceManagerService
-
+from price_management.service import PriceManagerService
 
 _INDICATOR_RE = re.compile(r"^(sma|ema|rsi)(?::?(\d+))?$")
 

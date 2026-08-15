@@ -1,4 +1,4 @@
-"""Use PriceSchedulerClient to generate tasks using command line parameters
+"""Use PriceSchedulerService to generate tasks using command line parameters
 """
 
 import argparse
@@ -14,7 +14,7 @@ from price_scheduler.service import PriceSchedulerService
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate monthly tasks for missing daily prices using PriceSchedulerClient")
+    parser = argparse.ArgumentParser(description="Generate monthly tasks for missing daily prices using PriceSchedulerService")
     parser.add_argument("--entity_id", required=False, help="Entity id to generate tasks for")
     parser.add_argument("--min_date", required=False, help="Minimum date to scan for missing prices in YYYY-MM-DDTHH:MM:SS format")
 
