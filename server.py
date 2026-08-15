@@ -32,7 +32,7 @@ from portfolio_management import (
     PortfolioDividendCreateRequest, PortfolioDividendUpdateRequest,
     DividendNotFound, PortfolioDividendNotFound,
 )
-from portfolio_management.client import PortfolioManagerClient
+from portfolio_management.service import PortfolioManagerService
 
 from cli_schedule import build_all_tasks
 
@@ -64,8 +64,8 @@ async def get_fundamentals_manager_client(
 async def get_portfolio_manager_client(
     price_manager: PriceManagerService = Depends(get_price_manager_client),
     db: Database = Depends(get_database),
-) -> PortfolioManagerClient:
-    return PortfolioManagerClient(price_manager, db)
+) -> PortfolioManagerService:
+    return PortfolioManagerService(price_manager, db)
 
 async def get_scheduler_client(
     price_manager: PriceManagerService = Depends(get_price_manager_client),
@@ -465,7 +465,7 @@ async def get_entity_fundamentals(
 )
 async def create_portfolio(
     body: CreatePortfolioRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.create_portfolio(body)
@@ -479,7 +479,7 @@ async def create_portfolio(
     description="List all portfolios ordered by creation time ascending.",
 )
 async def list_portfolios(
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     return portfolio_manager.list_portfolios()
 
@@ -492,7 +492,7 @@ async def list_portfolios(
 async def update_portfolio(
     portfolio_id: UUID,
     body: UpdatePortfolioRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.update_portfolio(portfolio_id, body)
@@ -509,7 +509,7 @@ async def update_portfolio(
 )
 async def delete_portfolio(
     portfolio_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         portfolio_manager.delete_portfolio(portfolio_id)
@@ -526,7 +526,7 @@ async def delete_portfolio(
 async def create_order(
     portfolio_id: UUID,
     body: CreateOrderRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.create_order(portfolio_id, body)
@@ -553,7 +553,7 @@ async def list_orders(
     date_to: Annotated[Optional[str], Query(description="ISO 8601, orders on or before")] = None,
     sort_by: Annotated[str, Query(description="Sort field: date, entity_code, shares, cost_basis")] = "date",
     sort_order: Annotated[str, Query(description="Sort direction: asc or desc")] = "desc",
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.list_orders(
@@ -574,7 +574,7 @@ async def update_order(
     portfolio_id: UUID,
     order_id: UUID,
     body: UpdateOrderRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.update_order(portfolio_id, order_id, body)
@@ -596,7 +596,7 @@ async def update_order(
 async def delete_order(
     portfolio_id: UUID,
     order_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         portfolio_manager.delete_order(order_id)
@@ -611,7 +611,7 @@ async def delete_order(
     description="Compute aggregate portfolio totals across ALL portfolios using the average-cost method. Converts non-PHP currencies to PHP via the price table.",
 )
 async def get_all_portfolios_totals(
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.compute_totals(None)
@@ -625,7 +625,7 @@ async def get_all_portfolios_totals(
     description="Compute per-entity portfolio totals across ALL portfolios using the average-cost method, with an aggregate totals block.",
 )
 async def get_all_portfolios_totals_by_entity(
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.compute_totals_by_entity(None)
@@ -635,7 +635,7 @@ async def get_all_portfolios_totals_by_entity(
 
 @app.get("/api/v1/portfolios/dividends/totals", operation_id="get_all_portfolios_dividend_totals")
 async def get_all_portfolios_dividend_totals(
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.compute_dividend_totals(None)
@@ -650,7 +650,7 @@ async def get_all_portfolios_dividend_totals(
 )
 async def get_portfolio_totals(
     portfolio_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     if not portfolio_manager.db.get_portfolio(portfolio_id):
         raise HTTPException(status_code=404, detail=f"portfolio not found: {portfolio_id}")
@@ -667,7 +667,7 @@ async def get_portfolio_totals(
 )
 async def get_portfolio_totals_by_entity(
     portfolio_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     if not portfolio_manager.db.get_portfolio(portfolio_id):
         raise HTTPException(status_code=404, detail=f"portfolio not found: {portfolio_id}")
@@ -680,7 +680,7 @@ async def get_portfolio_totals_by_entity(
 @app.get("/api/v1/portfolios/{portfolio_id}/dividends/totals", operation_id="get_portfolio_dividend_totals")
 async def get_portfolio_dividend_totals(
     portfolio_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     if not portfolio_manager.db.get_portfolio(portfolio_id):
         raise HTTPException(status_code=404, detail=f"portfolio not found: {portfolio_id}")
@@ -693,7 +693,7 @@ async def get_portfolio_dividend_totals(
 @app.post("/api/v1/dividends", operation_id="create_dividend")
 async def create_dividend(
     body: DividendEventCreateRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.create_dividend(body)
@@ -706,7 +706,7 @@ async def list_dividends(
     entity_code: Optional[str] = None,
     ex_date_from: Optional[date] = None,
     ex_date_to: Optional[date] = None,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.list_dividends(entity_code, ex_date_from, ex_date_to)
@@ -717,7 +717,7 @@ async def list_dividends(
 @app.get("/api/v1/dividends/{dividend_id}", operation_id="get_dividend")
 async def get_dividend(
     dividend_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.get_dividend(dividend_id)
@@ -729,7 +729,7 @@ async def get_dividend(
 async def update_dividend(
     dividend_id: UUID,
     body: DividendEventUpdateRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.update_dividend(dividend_id, body)
@@ -742,7 +742,7 @@ async def update_dividend(
 @app.delete("/api/v1/dividends/{dividend_id}", operation_id="delete_dividend")
 async def delete_dividend(
     dividend_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         portfolio_manager.delete_dividend(dividend_id)
@@ -759,7 +759,7 @@ async def create_dividend_fee(
     portfolio_id: UUID,
     dividend_id: UUID,
     body: PortfolioDividendCreateRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.create_dividend_fee(portfolio_id, dividend_id, body)
@@ -778,7 +778,7 @@ async def create_dividend_fee(
 async def get_dividend_fee(
     portfolio_id: UUID,
     dividend_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.get_dividend_fee(portfolio_id, dividend_id)
@@ -791,7 +791,7 @@ async def get_dividend_fee(
 )
 async def list_dividend_fees(
     portfolio_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.list_dividend_fees(portfolio_id)
@@ -807,7 +807,7 @@ async def update_dividend_fee(
     portfolio_id: UUID,
     dividend_id: UUID,
     body: PortfolioDividendUpdateRequest,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         return portfolio_manager.update_dividend_fee(portfolio_id, dividend_id, body)
@@ -824,7 +824,7 @@ async def update_dividend_fee(
 async def delete_dividend_fee(
     portfolio_id: UUID,
     dividend_id: UUID,
-    portfolio_manager: PortfolioManagerClient = Depends(get_portfolio_manager_client),
+    portfolio_manager: PortfolioManagerService = Depends(get_portfolio_manager_client),
 ):
     try:
         portfolio_manager.delete_dividend_fee(portfolio_id, dividend_id)
