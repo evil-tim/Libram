@@ -7,7 +7,7 @@ import signal
 from threading import Event, Thread
 
 from libram_database.db import Database
-from price_management import PriceManagerClient
+from price_management import PriceManagerService
 
 
 class PriceSchedulerExecutor:
@@ -21,7 +21,7 @@ class PriceSchedulerExecutor:
 
     def __init__(
         self,
-        price_manager_client: PriceManagerClient,
+        price_manager_client: PriceManagerService,
         db: Database,
         max_retries: int = 5,
         retry_delay_seconds: int = 300,

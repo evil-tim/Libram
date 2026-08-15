@@ -12,7 +12,7 @@ from price_analysis.moving_averages import compute_ema, compute_sma
 from price_analysis.rsi import compute_rsi
 
 if TYPE_CHECKING:
-    from price_management.client import PriceManagerClient
+    from price_management.service import PriceManagerService
 
 
 _INDICATOR_RE = re.compile(r"^(sma|ema|rsi)(?::?(\d+))?$")
@@ -50,7 +50,7 @@ async def _resolve_and_fetch_entity(
     code: str,
     start_dt: datetime,
     end_dt: datetime,
-    price_manager: "PriceManagerClient",
+    price_manager: "PriceManagerService",
     indicator_specs: list[tuple[str, int]],
 ) -> dict:
     """Resolve an entity code and fetch its summary + indicators."""
@@ -158,7 +158,7 @@ async def build_comparison_payload(
     end: str,
     indicators: list[str],
     normalize_to: str,
-    price_manager: "PriceManagerClient",
+    price_manager: "PriceManagerService",
 ) -> dict:
     """Build the comparison payload for a set of entities."""
     if len(entity_codes) < 2:

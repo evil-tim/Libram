@@ -8,7 +8,7 @@ from datetime import datetime
 from uuid import UUID
 from dotenv import load_dotenv
 from libram_database.db import Database
-from price_management.client import PriceManagerClient
+from price_management.service import PriceManagerService
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch and store financial data using PriceManagerClient")
@@ -27,7 +27,7 @@ def main():
         return
 
     db = Database(db_string)
-    client = PriceManagerClient(db)
+    client = PriceManagerService(db)
     inserted_count = client.fetch_and_store(
         UUID(str(args.entity_id)) if args.entity_id else None,
         args.entity_code,
