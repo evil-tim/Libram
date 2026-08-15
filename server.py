@@ -18,7 +18,7 @@ from price_scheduler.service import PriceSchedulerService
 from price_analysis import compute_sma, compute_ema, compute_rsi, convert_to_timezone_aware
 from price_analysis.comparison import build_comparison_payload
 from fundamentals_management import FundamentalsRequest, FundamentalsNotFound, FundamentalsValidationError, VALID_CONFIDENCE_LEVELS
-from fundamentals_management.client import FundamentalsManagerClient
+from fundamentals_management.service import FundamentalsManagerService
 from portfolio_management import (
     CreateOrderRequest,
     CreatePortfolioRequest,
@@ -58,8 +58,8 @@ async def get_price_manager_client(
 async def get_fundamentals_manager_client(
     price_manager: PriceManagerService = Depends(get_price_manager_client),
     db: Database = Depends(get_database),
-) -> FundamentalsManagerClient:
-    return FundamentalsManagerClient(price_manager, db)
+) -> FundamentalsManagerService:
+    return FundamentalsManagerService(price_manager, db)
 
 async def get_portfolio_manager_client(
     price_manager: PriceManagerService = Depends(get_price_manager_client),
@@ -424,7 +424,7 @@ async def compare_entities(
 )
 async def update_entity_fundamentals(
     body: FundamentalsRequest,
-    fundamentals_manager: FundamentalsManagerClient = Depends(get_fundamentals_manager_client),
+    fundamentals_manager: FundamentalsManagerService = Depends(get_fundamentals_manager_client),
 ):
     try:
         return fundamentals_manager.upload_fundamentals(body)
@@ -444,7 +444,7 @@ async def get_entity_fundamentals(
     mode: Annotated[str, Query(description="Query mode: 'all' (all snapshots), 'latest_only' (single most recent), 'latest_consolidated' (merged best-per-metric across snapshots)")] = "latest_only",
     min_confidence: Annotated[str, Query(description="Filter: only use snapshots at this confidence or higher. 'high' > 'medium' > 'low'")] = "low",
     as_of_date_after: Annotated[Optional[str], Query(description="Filter: only use snapshots with as_of_date >= this ISO date (e.g. 2026-01-01)")] = None,
-    fundamentals_manager: FundamentalsManagerClient = Depends(get_fundamentals_manager_client),
+    fundamentals_manager: FundamentalsManagerService = Depends(get_fundamentals_manager_client),
 ):
     valid_modes = {"all", "latest_only", "latest_consolidated"}
     if mode not in valid_modes:
