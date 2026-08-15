@@ -3,10 +3,11 @@
 This datasource fetches fund OHLC data from the PSE Edge page.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
-from typing import Any, Dict, Optional, Tuple, Union, Iterable
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from libram_types.libram_types import PriceRecord
+from typing import Any, Optional, Union
 
+from libram_types.libram_types import PriceRecord
 from price_sources.rest_datasource import RestJSONDatasource
 
 
@@ -18,7 +19,7 @@ class PSEEdgeDataSource(RestJSONDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-        ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         # input date is start inclusive and end exclusive, but the datasource expects end to be inclusive
         # subtract 1 day from end date to make it inclusive for the datasource
         return (
@@ -32,9 +33,9 @@ class PSEEdgeDataSource(RestJSONDatasource):
             })
 
 
-    def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
-        if not isinstance(data, Dict):
-            raise ValueError("Expected data to be a base object containing price records")
+    def parse_price_data(self, data: Union[dict[str, Any], list]) -> Iterable[PriceRecord]:
+        if not isinstance(data, dict):
+            raise TypeError("Expected data to be a base object containing price records")
 
         # unwrap the nested chartData field
         chart_data = data.get("chartData")
@@ -43,7 +44,7 @@ class PSEEdgeDataSource(RestJSONDatasource):
 
         # validate that chartData is a list of price records
         if not isinstance(chart_data, list):
-            raise ValueError("Expected 'chartData' to be a list of price records")
+            raise TypeError("Expected 'chartData' to be a list of price records")
 
         records = []
         for item in chart_data:

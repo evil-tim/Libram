@@ -8,11 +8,12 @@ The instance is initialized with a config dict. Expected config keys:
 """
 
 from abc import abstractmethod
-from typing import Any, Dict, Optional, Tuple, Iterable
+from collections.abc import Iterable
 from datetime import datetime
-from bs4 import BeautifulSoup
+from typing import Any, Optional
 
 import requests
+from bs4 import BeautifulSoup
 
 from libram_types.libram_types import PriceRecord
 from price_management import BaseDatasource
@@ -37,15 +38,15 @@ class HTMLDatasource(BaseDatasource):
         if not self.url:
             raise ValueError("config must include 'url'")
         self.method = (config.get("method") or "GET").upper()
-        self.headers: Dict[str, str] = config.get("headers") or {}
+        self.headers: dict[str, str] = config.get("headers") or {}
         self.timeout: int = config.get("timeout", 10)
 
     def fetch(
         self,
         url: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
-        request_params: Optional[Dict[str, Any]] = None,
-        request_body: Optional[Dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
+        request_params: Optional[dict[str, Any]] = None,
+        request_body: Optional[dict[str, Any]] = None,
     ) -> BeautifulSoup:
         """Perform the HTTP request and return parsed HTML.
 
@@ -84,7 +85,7 @@ class HTMLDatasource(BaseDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-    ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         """Build the url, query parameters and request body params for the request based on the entity and time range
         as well as the current instance's config.
         """
@@ -97,10 +98,10 @@ class HTMLDatasource(BaseDatasource):
 
     def build_headers(
         self,
-        base_headers: Dict[str, str],
+        base_headers: dict[str, str],
         entity: dict,
         config: dict,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Build the request headers based on the base headers, entity, and config.
 
         By default, this just returns the base headers, but implementations can override

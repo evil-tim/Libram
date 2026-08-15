@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from libram_database.db import Database
-from price_management.service import PriceManagerService
 from portfolio_management import (
     DividendNotFound,
     PortfolioDividendCreateRequest,
@@ -15,6 +14,7 @@ from portfolio_management import (
     PortfolioNotFound,
     PortfolioValidationError,
 )
+from price_management.service import PriceManagerService
 
 
 class DividendFeeService:

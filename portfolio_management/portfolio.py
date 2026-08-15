@@ -4,7 +4,11 @@ from uuid import UUID
 
 from libram_database.db import Database
 from libram_types.libram_types import PortfolioRecord
-from portfolio_management import CreatePortfolioRequest, PortfolioNotFound, UpdatePortfolioRequest
+from portfolio_management import (
+    CreatePortfolioRequest,
+    PortfolioNotFound,
+    UpdatePortfolioRequest,
+)
 
 
 class PortfolioService:

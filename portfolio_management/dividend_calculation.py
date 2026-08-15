@@ -7,9 +7,10 @@ date on which the conversion is valued, and returns the PHP exchange rate.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Callable, Iterable, Mapping, Optional
+from typing import Optional
 from uuid import UUID
 
 from libram_types.libram_types import (
@@ -34,7 +35,7 @@ def _decimal(value: object) -> Decimal:
 
 def _fee_value(fee: Optional[PortfolioDividendRecord]) -> tuple[Decimal, UUID | None]:
     if fee is None:
-        return Decimal("0"), None
+        return Decimal(0), None
     return _decimal(fee.fees), fee.fees_entity_id
 
 
@@ -63,7 +64,7 @@ def calculate_dividend(
     replayed.  Sorting by date and id makes same-day transactions stable.
     """
     if event.ex_date is None:
-        return Decimal("0"), Decimal("0")
+        return Decimal(0), Decimal(0)
     ex_date = _as_date(event.ex_date)
     assert ex_date is not None
     eligible_orders = []
@@ -73,7 +74,7 @@ def calculate_dividend(
             eligible_orders.append(order)
     eligible_orders.sort(key=lambda order: (_as_date(order.date) or date.min, str(order.id)))
 
-    shares = Decimal("0")
+    shares = Decimal(0)
     for order in eligible_orders:
         quantity = _decimal(order.shares)
         shares += quantity if order.type == "buy" else -quantity
@@ -97,8 +98,8 @@ def calculate_dividend_totals(
 ) -> tuple[Decimal, Decimal]:
     """Accumulate gross gains and fees for one portfolio independently."""
     fees_by_event = fees_by_event or {}
-    gain = Decimal("0")
-    fees = Decimal("0")
+    gain = Decimal(0)
+    fees = Decimal(0)
     for event in events:
         event_gain, event_fees = calculate_dividend(
             orders, event, fees_by_event.get(event.id), fx_lookup
@@ -122,8 +123,8 @@ def calculate_all_portfolios_dividend_totals(
     """
     event_list = list(events)
     fees_by_portfolio = fees_by_portfolio or {}
-    gain = Decimal("0")
-    fees = Decimal("0")
+    gain = Decimal(0)
+    fees = Decimal(0)
     for portfolio_id, portfolio_orders in orders_by_portfolio.items():
         portfolio_gain, portfolio_fees = calculate_dividend_totals(
             portfolio_orders,

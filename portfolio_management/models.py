@@ -1,7 +1,9 @@
-from decimal import Decimal
 from datetime import date
-from typing import Optional, Literal
+from decimal import Decimal
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
+
 
 class PortfolioNotFound(Exception):
     pass

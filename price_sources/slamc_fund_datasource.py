@@ -3,10 +3,11 @@
 This datasource fetches fund net asset value (NAV) data from the SLAMC API.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
-from typing import Any, Dict, Optional, Tuple, Union, Iterable
+from collections.abc import Iterable
 from datetime import datetime
-from libram_types.libram_types import PriceRecord
+from typing import Any, Optional, Union
 
+from libram_types.libram_types import PriceRecord
 from price_sources.rest_datasource import RestJSONDatasource
 
 
@@ -18,7 +19,7 @@ class SLAMCFundDataSource(RestJSONDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-        ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         # For SLAMC, we need to send the fund code and date range as query parameters.
         date_from = start.strftime("%Y-%m-%dT16:00:00.000Z")
         date_to = end.strftime("%Y-%m-%dT16:00:00.000Z")
@@ -35,9 +36,9 @@ class SLAMCFundDataSource(RestJSONDatasource):
             })
 
 
-    def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
+    def parse_price_data(self, data: Union[dict[str, Any], list]) -> Iterable[PriceRecord]:
         if not isinstance(data, list):
-            raise ValueError("Expected data to be a list of price records")
+            raise TypeError("Expected data to be a list of price records")
 
         records = []
         for item in data:

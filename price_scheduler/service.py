@@ -1,15 +1,15 @@
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Iterable, List, Optional, Tuple
+from typing import Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from libram_database.db import Database
+from libram_types.libram_types import PriceRecord, TaskRecord
 from price_management import PriceManagerService
 
-from libram_types.libram_types import PriceRecord, TaskRecord
 
-
-def _month_range_for(dt: datetime) -> Tuple[datetime, datetime]:
+def _month_range_for(dt: datetime) -> tuple[datetime, datetime]:
     start = datetime(dt.year, dt.month, 1, tzinfo=dt.tzinfo)
     if dt.month == 12:
         end = datetime(dt.year + 1, 1, 1, tzinfo=dt.tzinfo)
@@ -46,7 +46,7 @@ def _month_has_missing_prices(prices: Iterable[PriceRecord], start: datetime, en
     return False
 
 
-def _week_range_for(dt: datetime) -> Tuple[datetime, datetime]:
+def _week_range_for(dt: datetime) -> tuple[datetime, datetime]:
     """Get the Monday-inclusive start and the following Monday-exclusive end of the week containing dt."""
     start = dt - timedelta(days=dt.weekday())
     start = datetime(start.year, start.month, start.day, tzinfo=dt.tzinfo)
@@ -87,7 +87,7 @@ class PriceSchedulerService:
         self.db = db
 
     def generate_monthly_tasks(self, entity_id: Optional[UUID] = None, min_date: Optional[datetime] = None, max_open_tasks: int = 2000) -> Iterable[TaskRecord]:
-        created: List[TaskRecord] = []
+        created: list[TaskRecord] = []
 
         entities = self.price_manager_client.query_entities(
             entity_id,
@@ -156,7 +156,7 @@ class PriceSchedulerService:
 
     def generate_daily_tasks(self, entity_id: Optional[UUID] = None, max_open_tasks: int = 2000) -> Iterable[TaskRecord]:
         """Generate daily tasks for missing daily prices up to the previous week."""
-        created: List[TaskRecord] = []
+        created: list[TaskRecord] = []
 
         entities = self.price_manager_client.query_entities(
             entity_id,
@@ -213,7 +213,7 @@ class PriceSchedulerService:
 
     def generate_weekly_tasks(self, entity_id: Optional[UUID] = None, max_open_tasks: int = 2000) -> Iterable[TaskRecord]:
         """Generate weekly tasks for missing daily prices up to the previous month."""
-        created: List[TaskRecord] = []
+        created: list[TaskRecord] = []
 
         entities = self.price_manager_client.query_entities(
             entity_id,

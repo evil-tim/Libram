@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from dependencies import get_portfolio_manager_service
 from portfolio_management import (
     DividendEventCreateRequest,
     DividendEventUpdateRequest,
@@ -11,7 +12,6 @@ from portfolio_management import (
     PortfolioValidationError,
 )
 from portfolio_management.service import PortfolioManagerService
-from dependencies import get_portfolio_manager_service
 
 router = APIRouter()
 

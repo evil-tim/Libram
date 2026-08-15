@@ -1,6 +1,7 @@
 import importlib
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Iterable, Optional
+from typing import Optional
 from uuid import UUID
 
 from libram_database.db import Database
@@ -66,7 +67,7 @@ class PriceManagerService:
         if not datasource_id:
             raise ValueError("entity has no datasource_id")
         if not isinstance(datasource_id, UUID):
-            raise ValueError("entity's datasource_id is not a UUID")
+            raise TypeError("entity's datasource_id is not a UUID")
 
         datasource = self.db.get_datasource_raw(datasource_id)
         if not datasource:

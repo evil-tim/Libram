@@ -3,7 +3,7 @@
 import asyncio
 import re
 import statistics
-from datetime import datetime, timezone as tz
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 
 from price_analysis.date_utils import convert_to_timezone_aware
@@ -50,7 +50,7 @@ async def _resolve_and_fetch_entity(
     code: str,
     start_dt: datetime,
     end_dt: datetime,
-    price_manager: "PriceManagerService",
+    price_manager: PriceManagerService,
     indicator_specs: list[tuple[str, int]],
 ) -> dict:
     """Resolve an entity code and fetch its summary + indicators."""
@@ -158,7 +158,7 @@ async def build_comparison_payload(
     end: str,
     indicators: list[str],
     normalize_to: str,
-    price_manager: "PriceManagerService",
+    price_manager: PriceManagerService,
 ) -> dict:
     """Build the comparison payload for a set of entities."""
     if len(entity_codes) < 2:
@@ -237,7 +237,7 @@ async def build_comparison_payload(
         "entity_count": len(entity_codes),
         "requested_indicators": indicators,
         "normalize_to": normalize_to,
-        "generated_at": datetime.now(tz.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
     if unknown_indicators:
         meta["warnings"] = [f"Unknown indicator spec: {s}" for s in unknown_indicators]

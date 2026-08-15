@@ -7,9 +7,9 @@ from .libram_types import (
 )
 
 __all__ = [
+    "DividendEventRecord",
     "EntityRecord",
+    "PortfolioDividendRecord",
     "PriceRecord",
     "TaskRecord",
-    "DividendEventRecord",
-    "PortfolioDividendRecord",
 ]

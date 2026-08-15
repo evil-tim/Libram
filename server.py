@@ -1,9 +1,10 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
 from fastmcp.utilities.lifespan import combine_lifespans
-from fastapi.middleware.cors import CORSMiddleware
+
 
 def startup(_app: FastAPI):
     load_dotenv()
@@ -24,13 +25,13 @@ async def lifespan(_app: FastAPI):
 # primary FastAPI app used by route modules
 app = FastAPI(lifespan=lifespan, name="Libram Price Feed API", version="1.0.0")
 
-from routes.entities import router as entities_router
-from routes.prices import router as prices_router
-from routes.indicators import router as indicators_router
 from routes.compare import router as compare_router
-from routes.fundamentals import router as fundamentals_router
-from routes.portfolios import router as portfolios_router
 from routes.dividends import router as dividends_router
+from routes.entities import router as entities_router
+from routes.fundamentals import router as fundamentals_router
+from routes.indicators import router as indicators_router
+from routes.portfolios import router as portfolios_router
+from routes.prices import router as prices_router
 
 app.include_router(entities_router)
 app.include_router(prices_router)
@@ -48,7 +49,10 @@ mcp_app = mcp.http_app(path="/mcp", stateless_http=True, transport="http")
 # combined app that merges MCP routes and original API routes
 combined_app = FastAPI(
     name="Libram Price Feed API with MCP",
-    routes=[*mcp_app.routes],
+    routes=[
+        *mcp_app.routes,  # MCP routes
+        *app.routes,  # Original API routes
+    ],
     lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
 )
 

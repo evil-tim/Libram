@@ -2,9 +2,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from price_management.service import PriceManagerService
-from price_analysis.comparison import build_comparison_payload
 from dependencies import get_price_manager_service
+from price_analysis.comparison import build_comparison_payload
+from price_management.service import PriceManagerService
 
 router = APIRouter()
 

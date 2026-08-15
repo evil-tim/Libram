@@ -3,12 +3,14 @@
 
 import argparse
 import os
-
 from datetime import datetime
 from uuid import UUID
+
 from dotenv import load_dotenv
+
 from libram_database.db import Database
 from price_management.service import PriceManagerService
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch and store financial data using PriceManagerClient")

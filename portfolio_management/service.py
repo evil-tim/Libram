@@ -4,19 +4,18 @@ from typing import Optional
 from uuid import UUID
 
 from libram_database.db import Database
-from price_management.service import PriceManagerService
-
 from portfolio_management import (
     CreateOrderRequest,
     CreatePortfolioRequest,
     UpdateOrderRequest,
     UpdatePortfolioRequest,
 )
+from portfolio_management.dividend import DividendService
+from portfolio_management.dividend_fees import DividendFeeService
 from portfolio_management.order import OrderService
 from portfolio_management.portfolio import PortfolioService
 from portfolio_management.totals import TotalsService
-from portfolio_management.dividend import DividendService
-from portfolio_management.dividend_fees import DividendFeeService
+from price_management.service import PriceManagerService
 
 
 class PortfolioManagerService:

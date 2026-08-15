@@ -5,12 +5,13 @@ It extends the RestJSONDatasource and implements the required methods to build t
 """
 
 import json
-from typing import Any, Dict, Optional, Tuple, Iterable
+from collections.abc import Iterable
 from datetime import datetime
+from typing import Any, Optional
 
 from bs4 import BeautifulSoup
-from libram_types.libram_types import PriceRecord
 
+from libram_types.libram_types import PriceRecord
 from price_sources.html_datasource import HTMLDatasource
 
 
@@ -22,7 +23,7 @@ class ManulifeFundDataSource(HTMLDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-    ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         return (self.url.format(code=entity.get("code")), None, None)
 
     def parse_price_data(self, data: BeautifulSoup) -> Iterable[PriceRecord]:

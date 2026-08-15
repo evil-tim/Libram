@@ -3,10 +3,11 @@
 This datasource fetches forex price data from the OFX API.
 It extends the RestJSONDatasource and implements the required methods to build the request parameters and parse the response data.
 """
-from typing import Any, Dict, Optional, Tuple, Union, Iterable
+from collections.abc import Iterable
 from datetime import datetime
-from libram_types.libram_types import PriceRecord
+from typing import Any, Optional, Union
 
+from libram_types.libram_types import PriceRecord
 from price_sources.rest_datasource import RestJSONDatasource
 
 
@@ -18,7 +19,7 @@ class OFXForexDataSource(RestJSONDatasource):
         start: datetime,
         end: datetime,
         config: dict,
-        ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         base = config.get("base")
         currency = config.get("currency")
         start_epoch = int(start.timestamp() * 1000)
@@ -32,8 +33,8 @@ class OFXForexDataSource(RestJSONDatasource):
             },
             None)
 
-    def parse_price_data(self, data: Union[Dict[str, Any], list]) -> Iterable[PriceRecord]:
-        if not isinstance(data, Dict):
+    def parse_price_data(self, data: Union[dict[str, Any], list]) -> Iterable[PriceRecord]:
+        if not isinstance(data, dict):
             raise ValueError("Expected data to be a base object containing price records")
 
         # unwrap the nested HistoricalPoints field
