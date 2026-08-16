@@ -147,9 +147,48 @@ Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_
 - SQLAlchemy Core, not a declarative ORM; raw SQL uses `text()`.
 - Core domain types are dataclasses in `libram_types/`. Pydantic models are used for HTTP request models, primarily in `fundamentals_management/models.py` and `portfolio_management/models.py`.
 - Pure analysis functions live in `price_analysis/` and should not depend on the database or FastAPI.
-- There is currently no tests directory.
+- Unit tests live outside production packages under `tests/unit/`, mirroring the source domains.
 - Docker production setup is in `Dockerfile` and `docker-compose.yml`; supervisor runs the server and standalone scheduler executor in one container.
 - Ruff cleanup is part of the current codebase standard: preserve clean imports, formatting, and lint-compatible code.
+
+## Testing
+
+The project uses `pytest`, managed through `uv` and declared in the `dev` dependency group. The current suite is a deterministic unit-test suite; it does not require PostgreSQL, Docker, live network access, or external services.
+
+```bash
+# Install or refresh project and development dependencies
+uv sync
+
+# Run the complete unit suite
+uv run pytest tests/unit -q
+
+# Run a focused domain suite
+uv run pytest tests/unit/price_analysis -q
+uv run pytest tests/unit/price_sources -q
+uv run pytest tests/unit/price_management -q
+uv run pytest tests/unit/price_scheduler -q
+uv run pytest tests/unit/portfolio_management -q
+
+# Quality checks for tests
+uv run ruff check tests/unit
+uv run ruff format --check tests/unit
+```
+
+### Test layout and boundaries
+
+- `tests/unit/price_analysis/` covers pure calculations, indicators, comparison, drawdown, and date utilities.
+- `tests/unit/price_sources/` covers deterministic request construction and payload parsing for datasource implementations.
+- `tests/unit/price_management/` covers datasource loading and price fetch/store orchestration.
+- `tests/unit/price_scheduler/` covers missing-range generation and executor behavior without sleeping or live services.
+- `tests/unit/portfolio_management/` covers portfolio, order, totals, dividend, and fee behavior.
+- Keep tests outside production packages and mirror the production concern they exercise.
+- Test behavior rather than implementation details. Use real domain logic where practical; mock only external boundaries such as HTTP, database, and scheduler I/O.
+- Use small explicit payloads and expected records. Do not contact live services from unit tests.
+- Keep test dates and timestamps deterministic. Use timezone-aware fixtures and explicit conversions; do not mutate process-global `TZ` or call `time.tzset()` in shared test setup.
+- Put shared fixtures in `tests/conftest.py` only when they are genuinely cross-domain. Keep domain-specific fixtures beside the tests that use them.
+- When adding a test for a missing or experimental optional implementation, do not inject a synthetic production module in `conftest.py`; either test an available implementation or document the limitation.
+
+Integration tests for PostgreSQL, API routes, scheduler lifecycle, and live datasource boundaries are separate from this unit suite. Add them under an explicit `tests/integration/` boundary when that work begins, with isolated services and fixtures rather than weakening unit-test determinism.
 
 ## Architectural rules
 
