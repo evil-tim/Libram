@@ -1,7 +1,6 @@
-# ruff: noqa: DTZ001
-
 import json
-from datetime import datetime
+import time
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
@@ -18,9 +17,20 @@ from price_sources.pse_edge_datasource import PSEEdgeDataSource
 from price_sources.rest_datasource import RestJSONDatasource
 from price_sources.slamc_fund_datasource import SLAMCFundDataSource
 
-START = datetime(2024, 1, 2, 12)
-END = datetime(2024, 1, 5, 12)
+START = datetime(2024, 1, 2, 12, tzinfo=UTC)
+END = datetime(2024, 1, 5, 12, tzinfo=UTC)
 ENTITY = {"code": "FUND-1"}
+
+
+def utc_datetime(epoch: float) -> datetime:
+    """Normalize an epoch to the naive UTC values returned by datasource APIs."""
+    return datetime.fromtimestamp(epoch, UTC).replace(tzinfo=None)
+
+
+def local_datetime(epoch: float) -> datetime:
+    """Express an epoch in the host local timezone without mutating process state."""
+    offset = timedelta(seconds=-time.timezone)
+    return datetime.fromtimestamp(epoch, timezone(offset)).replace(tzinfo=None)
 
 
 def records(datasource, payload):
@@ -144,8 +154,8 @@ def test_pse_request_and_parse():
             high=2,
             low=0,
             close=1.5,
-            timestamp_start=datetime(2024, 1, 2),
-            timestamp_end=datetime(2024, 1, 3),
+            timestamp_start=utc_datetime(1704153600),
+            timestamp_end=utc_datetime(1704240000),
         )
     ]
 
@@ -184,7 +194,7 @@ def test_coindesk_request_and_parse():
     payload = {
         "Data": [
             {
-                "TIMESTAMP": int(datetime(2024, 1, 2).timestamp()),
+                "TIMESTAMP": 1704153600,
                 "OPEN": 10,
                 "HIGH": 12,
                 "LOW": 9,
@@ -198,8 +208,8 @@ def test_coindesk_request_and_parse():
             high=12,
             low=9,
             close=11,
-            timestamp_start=datetime(2024, 1, 2),
-            timestamp_end=datetime(2024, 1, 3),
+            timestamp_start=local_datetime(1704153600),
+            timestamp_end=local_datetime(1704240000),
         )
     ]
 
@@ -234,7 +244,7 @@ def test_ofx_request_and_parse():
     assert records(
         datasource,
         {"HistoricalPoints": [{"PointInTime": 1704196800000, "InterbankRate": 55.5}]},
-    ) == [PriceRecord(price=55.5, timestamp=datetime(2024, 1, 2, 20))]
+    ) == [PriceRecord(price=55.5, timestamp=local_datetime(1704196800))]
 
 
 @pytest.mark.parametrize(
@@ -263,8 +273,8 @@ def test_bpi_request_and_parse_with_partial_record():
         )
     }
     assert records(datasource, payload) == [
-        PriceRecord(price="1.25", timestamp=datetime(2024, 1, 2, 20)),
-        PriceRecord(price=None, timestamp=datetime(2024, 1, 3, 20)),
+        PriceRecord(price="1.25", timestamp=local_datetime(1704196800)),
+        PriceRecord(price=None, timestamp=local_datetime(1704283200)),
     ]
 
 
@@ -292,7 +302,7 @@ def test_manulife_request_and_parse_skips_partial_items():
         "html.parser",
     )
     assert records(datasource, soup) == [
-        PriceRecord(price=2.5, timestamp=datetime(2024, 1, 2))
+        PriceRecord(price=2.5, timestamp=utc_datetime(1704153600))
     ]
 
 
@@ -330,8 +340,8 @@ def test_slamc_request_and_parse_with_missing_fields():
             {"fundValDate": "2024-01-03"},
         ],
     ) == [
-        PriceRecord(price=4.2, timestamp=datetime(2024, 1, 2)),
-        PriceRecord(price=None, timestamp=datetime(2024, 1, 3)),
+        PriceRecord(price=4.2, timestamp=utc_datetime(1704153600)),
+        PriceRecord(price=None, timestamp=utc_datetime(1704240000)),
     ]
 
 
