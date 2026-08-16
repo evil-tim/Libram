@@ -78,14 +78,25 @@ def test_rest_fetch_rejects_invalid_json():
 
 def test_rest_fetch_prices_builds_and_parses_without_live_io():
     datasource = _ConcreteRESTDatasource(
-        {"url": "https://example.test", "headers": {"A": "B"}}
+        {
+            "url": "https://example.test/configured",
+            "method": "post",
+            "headers": {"A": "B"},
+            "timeout": 23,
+        }
     )
     response = Mock()
     response.json.return_value = {"value": 4}
 
     with (
         patch.object(
-            datasource, "build_request_params", return_value=(None, {"q": 1}, None)
+            datasource,
+            "build_request_params",
+            return_value=(
+                "https://example.test/generated",
+                {"q": 1},
+                {"body": "value"},
+            ),
         ) as build,
         patch(
             "price_sources.rest_datasource.requests.request", return_value=response
@@ -97,7 +108,15 @@ def test_rest_fetch_prices_builds_and_parses_without_live_io():
     build.assert_called_once_with(
         entity=ENTITY, start=START, end=END, config=datasource.config
     )
-    request.assert_called_once()
+    request.assert_called_once_with(
+        method="POST",
+        url="https://example.test/generated",
+        headers={"A": "B"},
+        params={"q": 1},
+        json={"body": "value"},
+        timeout=23,
+    )
+    response.raise_for_status.assert_called_once_with()
 
 
 def test_html_fetch_parses_response_content():
