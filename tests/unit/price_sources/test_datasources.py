@@ -1,6 +1,5 @@
 import json
-import time
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
@@ -28,9 +27,8 @@ def utc_datetime(epoch: float) -> datetime:
 
 
 def local_datetime(epoch: float) -> datetime:
-    """Express an epoch in the host local timezone without mutating process state."""
-    offset = timedelta(seconds=-time.timezone)
-    return datetime.fromtimestamp(epoch, timezone(offset)).replace(tzinfo=None)
+    """Match the production parser's naive local-time epoch conversion."""
+    return datetime.fromtimestamp(epoch, UTC).astimezone().replace(tzinfo=None)
 
 
 def records(datasource, payload):
