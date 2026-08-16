@@ -31,20 +31,30 @@ class FakeDb:
         self.datasource = datasource
         self.prices_count = prices_count
         self.saved = None
+        self.calls = []
 
     def get_entity_by_id_raw(self, entity_id):
+        self.calls.append(("get_entity_by_id_raw", entity_id))
         return self.entity if self.entity["id"] == entity_id else None
 
     def get_entity_by_code_raw(self, code):
+        self.calls.append(("get_entity_by_code_raw", code))
         return self.entity if self.entity.get("code") == code else None
 
     def count_prices(self, entity_id, start, end):
+        self.calls.append(("count_prices", entity_id, start, end))
         return self.prices_count
 
     def get_datasource_raw(self, datasource_id):
+        self.calls.append(("get_datasource_raw", datasource_id))
+        if self.datasource is None or not self.entity:
+            return None
+        if datasource_id != self.entity.get("datasource_id"):
+            return None
         return self.datasource
 
     def save_prices(self, entity_id, prices):
+        self.calls.append(("save_prices", entity_id, prices))
         self.saved = (entity_id, prices)
         return len(prices)
 
@@ -95,13 +105,34 @@ def test_expected_price_count_excludes_weekends():
 
 def test_prices_exist_uses_count_and_continuous_always_fetches():
     entity = make_entity()
-    service = PriceManagerService(FakeDb(entity, prices_count=5))
+    db = FakeDb(entity, prices_count=5)
+    service = PriceManagerService(db)
     start, end = datetime(2026, 8, 3), datetime(2026, 8, 10)
     assert service._prices_exist(entity, start, end) is True
+    assert db.calls == [("count_prices", entity["id"], start, end)]
     assert (
         service._prices_exist({**entity, "frequency": "CONTINUOUS"}, start, end)
         is False
     )
+    assert db.calls == [("count_prices", entity["id"], start, end)]
+
+
+def test_fetch_and_store_skips_datasource_when_prices_already_exist():
+    entity = make_entity()
+    db = FakeDb(entity, datasource={}, prices_count=1)
+    service = PriceManagerService(db)
+
+    assert (
+        service.fetch_and_store(
+            entity["id"], None, datetime(2026, 8, 3), datetime(2026, 8, 4)
+        )
+        == 0
+    )
+    assert db.saved is None
+    assert db.calls == [
+        ("get_entity_by_id_raw", entity["id"]),
+        ("count_prices", entity["id"], datetime(2026, 8, 3), datetime(2026, 8, 4)),
+    ]
 
 
 def test_fetch_and_store_merges_config_and_discards_future_prices(monkeypatch):
@@ -115,7 +146,6 @@ def test_fetch_and_store_merges_config_and_discards_future_prices(monkeypatch):
     }
     db = FakeDb(entity, datasource_row)
     service = PriceManagerService(db)
-    monkeypatch.setattr(service, "_prices_exist", lambda *_: False)
     inserted = service.fetch_and_store(
         entity["id"], None, datetime(2026, 1, 1), datetime(2026, 1, 2)
     )
@@ -124,6 +154,11 @@ def test_fetch_and_store_merges_config_and_discards_future_prices(monkeypatch):
     assert FakeDatasource.last_instance is not None
     assert FakeDatasource.last_instance.config["shared"] == "entity"
     assert FakeDatasource.last_instance.config["source"] == "api"
+    assert db.calls[:3] == [
+        ("get_entity_by_id_raw", entity["id"]),
+        ("count_prices", entity["id"], datetime(2026, 1, 1), datetime(2026, 1, 2)),
+        ("get_datasource_raw", entity["datasource_id"]),
+    ]
 
 
 def test_fetch_and_store_falls_back_to_code_and_reports_missing_entity():
@@ -135,16 +170,19 @@ def test_fetch_and_store_falls_back_to_code_and_reports_missing_entity():
 
 def test_fetch_and_store_validates_datasource_configuration():
     entity = make_entity(datasource_id=None)
-    service = PriceManagerService(FakeDb(entity))
-    service._prices_exist = lambda *_: False
+    db = FakeDb(entity)
+    service = PriceManagerService(db)
     with pytest.raises(ValueError, match="no datasource_id"):
-        service.fetch_and_store(entity["id"], None, datetime.now(), datetime.now())
+        service.fetch_and_store(
+            entity["id"], None, datetime(2026, 8, 3), datetime(2026, 8, 4)
+        )
 
     entity = make_entity(datasource_id="not-a-uuid")
     service = PriceManagerService(FakeDb(entity))
-    service._prices_exist = lambda *_: False
     with pytest.raises(TypeError, match="not a UUID"):
-        service.fetch_and_store(entity["id"], None, datetime.now(), datetime.now())
+        service.fetch_and_store(
+            entity["id"], None, datetime(2026, 8, 3), datetime(2026, 8, 4)
+        )
 
 
 def test_query_prices_requires_existing_entity():
