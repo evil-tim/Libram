@@ -8,10 +8,10 @@ from libram_types.libram_types import PortfolioOrderRecord
 from portfolio_management.totals import TotalsService
 
 
-def order(entity, when, shares, kind, cost, fees=0, portfolio=None):
+def order(entity, when, shares, kind, cost, fees=0, portfolio_id=None):
     return PortfolioOrderRecord(
         uuid4(),
-        portfolio or uuid4(),
+        portfolio_id or uuid4(),
         entity,
         when,
         Decimal(shares),
@@ -56,8 +56,8 @@ def test_compute_totals_by_entity_includes_percentage_of_current_portfolio_value
     portfolio_id = uuid4()
     first_entity, second_entity = uuid4(), uuid4()
     orders = [
-        order(first_entity, datetime(2026, 1, 1), 2, "buy", 10, portfolio=portfolio_id),
-        order(second_entity, datetime(2026, 1, 1), 1, "buy", 20, portfolio=portfolio_id),
+        order(first_entity, datetime(2026, 1, 1), 2, "buy", 10, portfolio_id=portfolio_id),
+        order(second_entity, datetime(2026, 1, 1), 1, "buy", 20, portfolio_id=portfolio_id),
     ]
 
     class FakeDatabase:
@@ -92,7 +92,7 @@ def test_compute_totals_by_entity_returns_zero_percentage_for_empty_portfolio_va
 
     class FakeDatabase:
         def get_all_orders(self, requested_portfolio_id):
-            return [order(entity, datetime(2026, 1, 1), 1, "buy", 10, portfolio=portfolio_id)]
+            return [order(entity, datetime(2026, 1, 1), 1, "buy", 10, portfolio_id=portfolio_id)]
 
         def get_entity_by_id_raw(self, entity_id):
             return {"code": "AAA", "name": "First"}
