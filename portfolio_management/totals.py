@@ -131,6 +131,7 @@ class TotalsService:
         # filter to events that have already been distributed
         paid_events = [e for e in all_events if e.payment_date is not None and e.payment_date <= datetime.now(timezone.utc).date()]
         entities = []
+        current_values: dict[UUID, Decimal] = {}
         for entity_id, orders in grouped.items():
             position = self._compute_position(orders)
             latest = Decimal(str(self.db.get_latest_price(entity_id) or 0))
@@ -147,6 +148,7 @@ class TotalsService:
                     fees += current_fees
             info = entity_map[entity_id]
             current_value = position["held_shares"] * latest
+            current_values[entity_id] = current_value
             entities.append({"entity_id": str(entity_id), "entity_code": info["code"], "entity_name": info["name"],
                              "shares_held": float(position["held_shares"]), "avg_cost_basis": float(position["avg_cost"]),
                              "total_cost_basis": float(position["total_cost_basis"]), "total_fees": float(position["total_fees"]),
@@ -154,6 +156,12 @@ class TotalsService:
                              "unrealized_gain": float(current_value - position["total_cost_basis"]),
                              "realized_gain": float(position["realized_gain"]), "dividend_gain": float(gain),
                              "dividend_fees": float(fees)})
+        total_current_value = sum(current_values.values(), Decimal(0))
+        for entity_id, entity in zip(current_values, entities):
+            entity["current_value_percentage"] = (
+                float(current_values[entity_id] / total_current_value * 100)
+                if total_current_value else 0.0
+            )
         totals = self.compute_totals(portfolio_id)
         return {"portfolio_id": str(portfolio_id) if portfolio_id else None, "as_of": totals["as_of"],
                 "currency": "PHP", "entities": entities,
