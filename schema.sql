@@ -171,3 +171,6 @@ CREATE TABLE IF NOT EXISTS portfolio_dividend (
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (portfolio_id, dividend_event_id)
 );
+
+ALTER TABLE portfolio
+    ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';

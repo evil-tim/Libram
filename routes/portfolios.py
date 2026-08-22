@@ -25,7 +25,7 @@ router = APIRouter()
 @router.post(
     "/api/v1/portfolios",
     operation_id="create_portfolio",
-    description="Create a named portfolio to group buy/sell orders for tracking investment positions.",
+    description="Create a named portfolio with an optional description to group buy/sell orders for tracking investment positions.",
 )
 async def create_portfolio(
     body: CreatePortfolioRequest,
@@ -51,7 +51,7 @@ async def list_portfolios(
 @router.put(
     "/api/v1/portfolios/{portfolio_id}",
     operation_id="update_portfolio",
-    description="Update a portfolio's name.",
+    description="Update a portfolio's name and description.",
 )
 async def update_portfolio(
     portfolio_id: UUID,

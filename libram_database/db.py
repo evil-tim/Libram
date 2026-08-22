@@ -661,6 +661,7 @@ class Database:
             name=row.get("name"),
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
+            description=row.get("description"),
         )
 
     @staticmethod
@@ -718,17 +719,17 @@ class Database:
             updated_at=row.get("updated_at"),
         )
 
-    def create_portfolio(self, name: str) -> PortfolioRecord:
+    def create_portfolio(self, name: str, description: str = "") -> PortfolioRecord:
         """Insert a portfolio row and return the record."""
         q = text(
             """
-            INSERT INTO portfolio (name)
-            VALUES (:name)
+            INSERT INTO portfolio (name, description)
+            VALUES (:name, :description)
             RETURNING *
             """
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {"name": name})
+            res = conn.execute(q, {"name": name, "description": description})
             row = res.mappings().first()
             if not row:
                 raise RuntimeError("failed to create portfolio")
@@ -752,18 +753,18 @@ class Database:
                 return None
         return self._row_to_portfolio(row)
 
-    def update_portfolio(self, portfolio_id: UUID, name: str) -> Optional[PortfolioRecord]:
-        """Update a portfolio's name. Returns the updated record or None if not found."""
+    def update_portfolio(self, portfolio_id: UUID, name: str, description: str = "") -> Optional[PortfolioRecord]:
+        """Update a portfolio's name and description. Returns the updated record or None if not found."""
         q = text(
             """
             UPDATE portfolio
-            SET name = :name, updated_at = now()
+            SET name = :name, description = :description, updated_at = now()
             WHERE id = :id
             RETURNING *
             """
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {"id": str(portfolio_id), "name": name})
+            res = conn.execute(q, {"id": str(portfolio_id), "name": name, "description": description})
             row = res.mappings().first()
             if not row:
                 return None
