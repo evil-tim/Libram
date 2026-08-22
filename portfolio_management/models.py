@@ -31,10 +31,12 @@ class PortfolioDividendNotFound(Exception):
 
 class CreatePortfolioRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=1000)
 
 
 class UpdatePortfolioRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=1000)
 
 
 class CreateOrderRequest(BaseModel):

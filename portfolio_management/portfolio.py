@@ -21,19 +21,20 @@ class PortfolioService:
         return {
             "id": str(record.id),
             "name": record.name,
+            "description": record.description or "",
             "created_at": record.created_at.isoformat() if record.created_at else None,
             "updated_at": record.updated_at.isoformat() if record.updated_at else None,
         }
 
     def create_portfolio(self, body: CreatePortfolioRequest) -> dict:
-        record = self.db.create_portfolio(body.name)
+        record = self.db.create_portfolio(body.name, body.description)
         return self._format_portfolio(record)
 
     def list_portfolios(self) -> list[dict]:
         return [self._format_portfolio(r) for r in self.db.list_portfolios()]
 
     def update_portfolio(self, portfolio_id: UUID, body: UpdatePortfolioRequest) -> dict:
-        record = self.db.update_portfolio(portfolio_id, body.name)
+        record = self.db.update_portfolio(portfolio_id, body.name, body.description)
         if not record:
             raise PortfolioNotFound(f"portfolio not found: {portfolio_id}")
         return self._format_portfolio(record)

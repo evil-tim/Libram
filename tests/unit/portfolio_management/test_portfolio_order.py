@@ -33,15 +33,20 @@ class PortfolioDb:
             else None
         )
 
-    def create_portfolio(self, name):
+    def create_portfolio(self, name, description=""):
+        self.portfolio = PortfolioRecord(
+            self.portfolio.id if self.portfolio else uuid4(),
+            name,
+            description=description,
+        ) if self.portfolio else PortfolioRecord(uuid4(), name, description=description)
         return self.portfolio
 
-    def update_portfolio(self, portfolio_id, name):
-        return (
-            self.portfolio
-            if self.portfolio and portfolio_id == self.portfolio.id
-            else None
-        )
+    def update_portfolio(self, portfolio_id, name, description=""):
+        if self.portfolio and portfolio_id == self.portfolio.id:
+            self.portfolio.name = name
+            self.portfolio.description = description
+            return self.portfolio
+        return None
 
     def delete_portfolio(self, portfolio_id):
         return bool(self.portfolio and portfolio_id == self.portfolio.id)
@@ -82,11 +87,12 @@ class PriceManager:
 
 def test_portfolio_service_formats_and_raises_not_found():
     pid = uuid4()
-    record = PortfolioRecord(pid, "Growth", datetime(2026, 1, 1), None)
+    record = PortfolioRecord(pid, "Growth", datetime(2026, 1, 1), None, "Core holdings")
     service = PortfolioService(PortfolioDb(record))
     assert service._format_portfolio(record)["id"] == str(pid)
+    assert service._format_portfolio(record)["description"] == "Core holdings"
     with pytest.raises(PortfolioNotFound):
-        service.update_portfolio(uuid4(), type("Body", (), {"name": "x"})())
+        service.update_portfolio(uuid4(), type("Body", (), {"name": "x", "description": "y"})())
 
 
 def test_order_service_rejects_unknown_entity_and_invalid_date():
