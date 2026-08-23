@@ -99,7 +99,7 @@ def test_web3_cache_reuses_connected_instance(monkeypatch):
     web3_module._clear_caches()
     instances = [_ConnectedWeb3()]
     monkeypatch.setattr(
-        web3_module, "_get_cached_web3_instance", lambda *args: instances[0]
+        web3_module, "_create_web3_instance", lambda *args: instances[0]
     )
     monkeypatch.setattr(
         web3_module, "_is_web3_valid", lambda value: value.is_connected()
@@ -120,7 +120,7 @@ def test_web3_cache_keys_timeout_separately(monkeypatch):
         created.append((rpc_url, timeout_sec, value))
         return value
 
-    monkeypatch.setattr(web3_module, "_get_cached_web3_instance", make_web3)
+    monkeypatch.setattr(web3_module, "_create_web3_instance", make_web3)
     monkeypatch.setattr(
         web3_module, "_is_web3_valid", lambda value: value.is_connected()
     )
@@ -142,7 +142,7 @@ def test_invalid_endpoint_only_evicts_its_own_cache_entry(monkeypatch):
     created = {"https://rpc-a": healthy, "https://rpc-b": invalid}
     monkeypatch.setattr(
         web3_module,
-        "_get_cached_web3_instance",
+        "_create_web3_instance",
         lambda rpc_url, timeout_sec: created[rpc_url],
     )
     monkeypatch.setattr(
