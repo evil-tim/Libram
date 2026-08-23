@@ -174,3 +174,28 @@ CREATE TABLE IF NOT EXISTS portfolio_dividend (
 
 ALTER TABLE portfolio
     ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
+
+-- snapshot_state
+-- Durable fixed-delay schedules for explicitly enabled snapshot entities.
+CREATE TABLE IF NOT EXISTS snapshot_state (
+    entity_id uuid PRIMARY KEY REFERENCES entity(id) ON DELETE CASCADE,
+    enabled boolean NOT NULL DEFAULT true,
+    interval_seconds integer NOT NULL CHECK (interval_seconds > 0),
+    next_due_at timestamptz NOT NULL,
+    lease_token uuid,
+    lease_expires_at timestamptz,
+    worker_id text,
+    attempt_count bigint NOT NULL DEFAULT 0,
+    consecutive_failures integer NOT NULL DEFAULT 0,
+    last_started_at timestamptz,
+    last_succeeded_at timestamptz,
+    last_failed_at timestamptz,
+    last_observed_at timestamptz,
+    last_duration_ms integer,
+    last_error text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_state_due
+    ON snapshot_state (next_due_at, entity_id)
+    WHERE enabled = true;
