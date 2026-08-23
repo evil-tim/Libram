@@ -20,7 +20,6 @@ The instance makes use of the following global env variables
 
 import os
 from abc import abstractmethod
-from collections.abc import Iterable
 from datetime import datetime
 from decimal import Decimal
 from typing import cast
@@ -69,12 +68,10 @@ class Web3DataSource(BaseDatasource):
         self.timeout = _read_optional_int_env("LIBRAM_WEB3_TIMEOUT")
         self.backoff = _read_optional_int_env("LIBRAM_WEB3_BACKOFF")
 
-    def fetch_prices(
-        self, entity: dict, start: datetime, end: datetime
-    ) -> Iterable[PriceRecord]:
+    def fetch_price(self, entity: dict) -> PriceRecord:
         """Fetch price data for a blockchain token. Entity is implied from the configured source token.
-        Entity's currency is implied from the configured target token. Start and end are ignored - this is the price
-        for the current block or latest available data."""
+        Entity's currency is implied from the configured target token.
+        """
 
         web3 = get_web3_instance(
             self.rpc_url,
@@ -93,11 +90,10 @@ class Web3DataSource(BaseDatasource):
             web3=web3,
         )
 
-        record = PriceRecord(
+        return PriceRecord(
             price=price,
             timestamp=datetime.now(),
         )
-        return [record]
 
     @abstractmethod
     def fetch_blockchain_price(
