@@ -16,6 +16,7 @@ from libram_types.libram_types import (
     PortfolioOrderRecord,
     PortfolioRecord,
     PriceRecord,
+    SnapshotStateRecord,
     TaskRecord,
 )
 
@@ -271,6 +272,81 @@ class Database:
             row = res.mappings().first()
             count = row.get("c") if row else None
             return int(count) if count is not None else 0
+
+    @staticmethod
+    def _snapshot_state_record(row) -> SnapshotStateRecord:
+        entity_id = row.get("entity_id")
+        if not isinstance(entity_id, UUID):
+            raise RuntimeError("snapshot state entity_id is not a UUID")
+        return SnapshotStateRecord(
+            entity_id=entity_id, enabled=bool(row["enabled"]),
+            interval_seconds=int(row["interval_seconds"]), next_due_at=row["next_due_at"],
+            lease_token=row.get("lease_token"), lease_expires_at=row.get("lease_expires_at"),
+            worker_id=row.get("worker_id"), attempt_count=int(row["attempt_count"]),
+            consecutive_failures=int(row["consecutive_failures"]),
+            last_started_at=row.get("last_started_at"), last_succeeded_at=row.get("last_succeeded_at"),
+            last_failed_at=row.get("last_failed_at"), last_observed_at=row.get("last_observed_at"),
+            last_duration_ms=row.get("last_duration_ms"), last_error=row.get("last_error"),
+            created_at=row.get("created_at"), updated_at=row.get("updated_at"),
+        )
+
+    def ensure_snapshot_state(self, entity_id: UUID, interval_seconds: int, enabled: bool = True) -> SnapshotStateRecord:
+        if interval_seconds <= 0:
+            raise ValueError("interval_seconds must be positive")
+        query = text("""INSERT INTO snapshot_state (entity_id, interval_seconds, enabled, next_due_at)
+            SELECT id, :interval_seconds, :enabled, now() FROM entity
+            WHERE id = :entity_id AND frequency = 'CONTINUOUS'
+            ON CONFLICT (entity_id) DO UPDATE SET interval_seconds = EXCLUDED.interval_seconds,
+                enabled = EXCLUDED.enabled, updated_at = now() RETURNING *""")
+        with self.engine.begin() as conn:
+            row = conn.execute(query, {"entity_id": str(entity_id), "interval_seconds": interval_seconds, "enabled": enabled}).mappings().first()
+        if not row:
+            raise ValueError("entity does not exist or is not CONTINUOUS")
+        return self._snapshot_state_record(row)
+
+    def claim_due_snapshot(self, lease_token: UUID, worker_id: str, lease_duration_seconds: int) -> Optional[SnapshotStateRecord]:
+        if lease_duration_seconds <= 0:
+            raise ValueError("lease_duration_seconds must be positive")
+        query = text("""WITH candidate AS (SELECT entity_id FROM snapshot_state
+            WHERE enabled AND next_due_at <= now() AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+            ORDER BY next_due_at, entity_id FOR UPDATE SKIP LOCKED LIMIT 1)
+            UPDATE snapshot_state AS state SET lease_token = :lease_token,
+            lease_expires_at = now() + (:duration * interval '1 second'), worker_id = :worker_id,
+            last_started_at = now(), attempt_count = state.attempt_count + 1, updated_at = now()
+            FROM candidate WHERE state.entity_id = candidate.entity_id RETURNING state.*""")
+        with self.engine.begin() as conn:
+            row = conn.execute(query, {"lease_token": str(lease_token), "worker_id": worker_id, "duration": lease_duration_seconds}).mappings().first()
+        return self._snapshot_state_record(row) if row else None
+
+    def renew_snapshot_lease(self, entity_id: UUID, lease_token: UUID, lease_duration_seconds: int) -> bool:
+        if lease_duration_seconds <= 0:
+            raise ValueError("lease_duration_seconds must be positive")
+        query = text("""UPDATE snapshot_state SET lease_expires_at = now() + (:duration * interval '1 second'), updated_at = now()
+            WHERE entity_id = :entity_id AND lease_token = :lease_token""")
+        with self.engine.begin() as conn:
+            result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "duration": lease_duration_seconds})
+        return result.rowcount == 1
+
+    def complete_snapshot(self, entity_id: UUID, lease_token: UUID, observed_at: datetime, duration_ms: int) -> bool:
+        query = text("""UPDATE snapshot_state SET lease_token = NULL, lease_expires_at = NULL, worker_id = NULL,
+            consecutive_failures = 0, last_succeeded_at = now(), last_observed_at = :observed_at,
+            last_duration_ms = :duration_ms, last_error = NULL,
+            next_due_at = now() + (interval_seconds * interval '1 second'), updated_at = now()
+            WHERE entity_id = :entity_id AND lease_token = :lease_token""")
+        with self.engine.begin() as conn:
+            result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "observed_at": observed_at, "duration_ms": duration_ms})
+        return result.rowcount == 1
+
+    def fail_snapshot(self, entity_id: UUID, lease_token: UUID, error: str, retry_delay_seconds: int, max_backoff_seconds: int, jitter_seconds: int = 0) -> bool:
+        if retry_delay_seconds <= 0 or max_backoff_seconds <= 0 or jitter_seconds < 0:
+            raise ValueError("retry and backoff values are invalid")
+        query = text("""UPDATE snapshot_state SET lease_token = NULL, lease_expires_at = NULL, worker_id = NULL,
+            consecutive_failures = consecutive_failures + 1, last_failed_at = now(), last_error = :error,
+            next_due_at = now() + (LEAST(:max_backoff, :retry_delay * power(2, consecutive_failures + 1) + :jitter) * interval '1 second'), updated_at = now()
+            WHERE entity_id = :entity_id AND lease_token = :lease_token""")
+        with self.engine.begin() as conn:
+            result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "error": error, "retry_delay": retry_delay_seconds, "max_backoff": max_backoff_seconds, "jitter": jitter_seconds})
+        return result.rowcount == 1
 
     def create_new_task(self, entity_id: UUID, start: datetime, end: datetime) -> TaskRecord:
         """Create a new task row and return a TaskRecord for it."""

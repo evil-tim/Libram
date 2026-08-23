@@ -45,6 +45,27 @@ class TaskRecord:
 
 
 @dataclass
+class SnapshotStateRecord:
+    entity_id: UUID
+    enabled: bool
+    interval_seconds: int
+    next_due_at: datetime
+    lease_token: Optional[UUID] = None
+    lease_expires_at: Optional[datetime] = None
+    worker_id: Optional[str] = None
+    attempt_count: int = 0
+    consecutive_failures: int = 0
+    last_started_at: Optional[datetime] = None
+    last_succeeded_at: Optional[datetime] = None
+    last_failed_at: Optional[datetime] = None
+    last_observed_at: Optional[datetime] = None
+    last_duration_ms: Optional[int] = None
+    last_error: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
 class PortfolioRecord:
     id: UUID
     name: Optional[str] = None
