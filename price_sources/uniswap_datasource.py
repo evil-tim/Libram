@@ -1,3 +1,9 @@
+"""Uniswap DataSource implementation.
+
+This datasource fetches price data from a Uniswap V3 pool.
+It extends the Web3DataSource and delegates to the Uniswap
+utility functions to obtain the price at the current time.
+"""
 from decimal import Decimal
 
 from web3 import Web3
