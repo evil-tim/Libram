@@ -93,7 +93,7 @@ def _is_web3_valid(web3: Web3 | None) -> bool:
     return web3 is not None and web3.is_connected()
 
 
-def _get_cached_web3_instance(rpc_url: str, timeout_sec: int = 30) -> Web3:
+def _create_web3_instance(rpc_url: str, timeout_sec: int = 30) -> Web3:
     """Create a Web3 HTTP client.
 
     This helper intentionally does not cache. Cache lookup, validation, and
@@ -161,6 +161,7 @@ def get_web3_instance(
 ) -> Web3:
     """Get a validated Web3 client, retrying only the requested cache key."""
     for count in range(retries):
+        # get from cache and return it if valid otherwise evict it from cache
         web3 = _cache_get_web3(rpc_url, timeout_sec)
         if web3 is not None:
             if _is_web3_valid(web3):
@@ -170,7 +171,7 @@ def get_web3_instance(
         # Do not hold _cache_lock while constructing or validating the client:
         # both operations may perform network work and would otherwise stall
         # every other RPC endpoint sharing this process.
-        web3 = _get_cached_web3_instance(rpc_url, timeout_sec)
+        web3 = _create_web3_instance(rpc_url, timeout_sec)
         if _is_web3_valid(web3):
             return _cache_store_web3(rpc_url, timeout_sec, web3)
 
