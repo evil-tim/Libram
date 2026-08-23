@@ -1,6 +1,7 @@
 import pytest
 
 from price_sources.web3 import web3 as web3_module
+from price_sources.web3_datasource import _read_optional_int_env
 
 
 class DummyEth:
@@ -62,3 +63,22 @@ def test_get_cached_contract_uses_normalized_address(monkeypatch):
     # Assert: contract factory received checksumed address via our dummy
     assert result["address"] == dummy.to_checksum_address("0x" + raw)
     assert result["abi"] == [{"dummy": True}]
+
+
+def test_read_optional_int_env_parses_integer(monkeypatch):
+    monkeypatch.setenv("LIBRAM_WEB3_RETRIES", "4")
+
+    assert _read_optional_int_env("LIBRAM_WEB3_RETRIES") == 4
+
+
+def test_read_optional_int_env_returns_none_when_unset(monkeypatch):
+    monkeypatch.delenv("LIBRAM_WEB3_RETRIES", raising=False)
+
+    assert _read_optional_int_env("LIBRAM_WEB3_RETRIES") is None
+
+
+def test_read_optional_int_env_rejects_non_integer(monkeypatch):
+    monkeypatch.setenv("LIBRAM_WEB3_RETRIES", "three")
+
+    with pytest.raises(ValueError, match="LIBRAM_WEB3_RETRIES must be an integer"):
+        _read_optional_int_env("LIBRAM_WEB3_RETRIES")
