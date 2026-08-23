@@ -1,12 +1,27 @@
-"""Base Web3 datasource implementation. Contains common logic for fetching prices from blockchain sources using Web3.
-This class is intended to be subclassed by specific implementations that provide the actual price fetching logic using two ERC20 tokens as
-the source and target tokens.
+"""An abstract Web3 datasource for fetching on-chain prices.
+
+Contains common logic for fetching prices from blockchain sources using Web3.
+This class is intended to be subclassed by specific implementations that provide
+the actual price fetching logic using two ERC20 tokens as the source and target tokens.
+
+The instance is initialized with a config dict. Expected config keys:
+- "rpc_url" (required): the RPC endpoint URL
+- "contract_address": (required) the contract address to interact with
+- "source_token_address": (required) the token that we want to get the price of. Corresponds to the entity.
+- "target_token_address": (required) the token that that the price is denominated in. Corresponds to the entity's currency
+- "pool_fee": the fee of the selected swap pool. Acts as pool discriminator
+
+The instance makes use of the following global env variables
+- "LIBRAM_WEB3_RETRIES": the number of tries when making a Web3 instance before giving up
+- "LIBRAM_WEB3_BACKOFF": the amount of time in seconds to wait before retrying creating a Web3 instance
+- "LIBRAM_WEB3_TIMEOUT": the connection timeout of the Web3 instance in seconds
+
 """
 
 import os
 from abc import abstractmethod
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import cast
 
