@@ -33,6 +33,17 @@ from price_sources.web3.erc20_token import ERC20Token
 from price_sources.web3.web3 import get_web3_instance
 
 
+def _read_optional_int_env(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+
+
 class Web3DataSource(BaseDatasource):
 
     def __init__(self, config: dict):
@@ -54,21 +65,9 @@ class Web3DataSource(BaseDatasource):
             str, self.config.get("target_token_address")
         )
         self.pool_fee: int = int(self.config.get("pool_fee", 0))
-        self.retries: int | None = (
-            cast(int, os.getenv("LIBRAM_WEB3_RETRIES"))
-            if os.getenv("LIBRAM_WEB3_RETRIES") is not None
-            else None
-        )
-        self.timeout: int | None = (
-            cast(int, os.getenv("LIBRAM_WEB3_TIMEOUT"))
-            if os.getenv("LIBRAM_WEB3_TIMEOUT") is not None
-            else None
-        )
-        self.backoff: int | None = (
-            cast(int, os.getenv("LIBRAM_WEB3_BACKOFF"))
-            if os.getenv("LIBRAM_WEB3_BACKOFF") is not None
-            else None
-        )
+        self.retries = _read_optional_int_env("LIBRAM_WEB3_RETRIES")
+        self.timeout = _read_optional_int_env("LIBRAM_WEB3_TIMEOUT")
+        self.backoff = _read_optional_int_env("LIBRAM_WEB3_BACKOFF")
 
     def fetch_prices(
         self, entity: dict, start: datetime, end: datetime
