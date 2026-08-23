@@ -20,7 +20,7 @@ The instance makes use of the following global env variables
 
 import os
 from abc import abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import cast
 
@@ -92,7 +92,7 @@ class Web3DataSource(BaseDatasource):
 
         return PriceRecord(
             price=price,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
         )
 
     @abstractmethod
