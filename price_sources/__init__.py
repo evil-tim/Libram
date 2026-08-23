@@ -4,22 +4,24 @@ Importing classes here makes it convenient to reference datasources from other
 modules (e.g. configuration or registry code) without importing individual files.
 """
 
-from .rest_datasource import RestJSONDatasource
-from .html_datasource import HTMLDatasource
-from .pse_edge_datasource import PSEEdgeDataSource
-from .coindesk_ohlc_datasource import CoindeskOHLCDataSource
-from .ofx_forex_datasource import OFXForexDataSource
 from .bpi_fund_datasource import BPIFundDataSource
+from .coindesk_ohlc_datasource import CoindeskOHLCDataSource
+from .html_datasource import HTMLDatasource
 from .manulife_fund_datasource import ManulifeFundDataSource
+from .ofx_forex_datasource import OFXForexDataSource
+from .pse_edge_datasource import PSEEdgeDataSource
+from .rest_datasource import RestJSONDatasource
 from .slamc_fund_datasource import SLAMCFundDataSource
+from .uniswap_datasource import UniswapDataSource
 
 __all__ = [
-	"RestJSONDatasource",
-	"HTMLDatasource",
-	"PSEEdgeDataSource",
-	"CoindeskOHLCDataSource",
-	"OFXForexDataSource",
 	"BPIFundDataSource",
+	"CoindeskOHLCDataSource",
+	"HTMLDatasource",
 	"ManulifeFundDataSource",
+	"OFXForexDataSource",
+	"PSEEdgeDataSource",
+	"RestJSONDatasource",
 	"SLAMCFundDataSource",
+    "UniswapDataSource",
 ]

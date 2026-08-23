@@ -1,11 +1,12 @@
 import os
+
 from dotenv import load_dotenv
 from fastapi import Depends
 
-from libram_database.db import Database
-from price_management.service import PriceManagerService
 from fundamentals_management.service import FundamentalsManagerService
+from libram_database.db import Database
 from portfolio_management.service import PortfolioManagerService
+from price_management.service import PriceManagerService
 from price_scheduler.service import PriceSchedulerService
 
 
