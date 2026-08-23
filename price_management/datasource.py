@@ -6,7 +6,7 @@ from libram_types.libram_types import PriceRecord
 
 
 class BaseDatasource(ABC):
-    """Interface for datasource implementations.
+    """Base class for datasources.
 
     Implementations should subclass this and override `fetch_prices` for historical price implementations
     and/or `fetch_price` for snapshot price implementations.
@@ -31,7 +31,7 @@ class BaseDatasource(ABC):
         """Fetch the current price data for `entity`.
 
         `entity` is the raw DB row (as a mapping/dict) from the `entity` table.
-        Real implementations must yield a `PriceRecord` instance.
+        Real implementations must return a `PriceRecord` instance.
         """
         raise UnsupportedDatasourceOperationError(
             "This datasource does not support snapshot price fetching."
