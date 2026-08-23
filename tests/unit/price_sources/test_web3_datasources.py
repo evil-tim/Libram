@@ -64,7 +64,7 @@ def test_web3_datasource_fetch_price_builds_snapshot(monkeypatch):
     assert isinstance(result, PriceRecord)
     assert result.price == Decimal("12.5")
     assert isinstance(result.timestamp, datetime)
-    assert result.timestamp.tzinfo is None
+    assert result.timestamp.tzinfo is UTC
     get_web3.assert_called_once_with("https://rpc.example.test", 3, 30, 5)
     assert token_factory.call_args_list == [
         ((TOKEN_ADDRESS, web3), {}),
