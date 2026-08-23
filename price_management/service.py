@@ -1,6 +1,6 @@
 import importlib
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
@@ -111,6 +111,65 @@ class PriceManagerService:
         print(f"{datetime.now().isoformat()} : Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
         inserted = self.db.save_prices(db_entity_id, cleaned_prices)
         return inserted
+
+    def fetch_snapshot_and_store(
+        self, entity_id: Optional[UUID], entity_code: Optional[str] = None
+    ) -> int:
+        """Fetch and persist one current observation without historical checks."""
+        entity = self._resolve_entity(entity_id, entity_code)
+        db_entity_id = entity["id"]
+        if not isinstance(db_entity_id, UUID):
+            db_entity_id = UUID(str(db_entity_id))
+
+        datasource = self._load_entity_datasource(entity)
+        snapshot = datasource.fetch_price(entity)
+        if not isinstance(snapshot, PriceRecord):
+            raise TypeError("snapshot datasource must return a PriceRecord")
+        if snapshot.price is None or snapshot.timestamp is None:
+            raise ValueError("snapshot must contain a price and timestamp")
+        if snapshot.timestamp_start is not None or snapshot.timestamp_end is not None:
+            raise ValueError("snapshot must be a single-timestamp PriceRecord")
+        if snapshot.timestamp.tzinfo is None or snapshot.timestamp.utcoffset() is None:
+            raise ValueError("snapshot timestamp must be timezone-aware UTC")
+        timestamp = snapshot.timestamp.astimezone(UTC)
+        if timestamp > datetime.now(UTC):
+            raise ValueError("snapshot timestamp cannot be in the future")
+
+        # Persist a normalized UTC timestamp and reject OHLC-only records by
+        # requiring the point-in-time fields above.
+        snapshot.timestamp = timestamp
+        return self.db.save_prices(db_entity_id, [snapshot])
+
+    def _resolve_entity(
+        self, entity_id: Optional[UUID], entity_code: Optional[str]
+    ) -> dict[str, object]:
+        entity = self.db.get_entity_by_id_raw(entity_id) if entity_id else None
+        if entity_code and not entity:
+            entity = self.db.get_entity_by_code_raw(entity_code)
+        if not entity:
+            raise ValueError("entity not found")
+        return entity
+
+    def _load_entity_datasource(self, entity: dict[str, object]) -> BaseDatasource:
+        datasource_id = entity.get("datasource_id")
+        if not datasource_id:
+            raise ValueError("entity has no datasource_id")
+        if not isinstance(datasource_id, UUID):
+            raise TypeError("entity's datasource_id is not a UUID")
+
+        datasource = self.db.get_datasource_raw(datasource_id)
+        if not datasource:
+            raise ValueError("datasource not found for entity")
+        implementation = datasource.get("implementation")
+        if not implementation:
+            raise ValueError("datasource implementation not specified")
+        entity_config = entity.get("config")
+        datasource_config = datasource.get("config")
+        config = {
+            **(dict(datasource_config) if isinstance(datasource_config, dict) else {}),
+            **(dict(entity_config) if isinstance(entity_config, dict) else {}),
+        }
+        return _load_datasource(str(implementation), config)
 
     def query_entities(self, entity_id: Optional[UUID], entity_code: Optional[str], entity_name: Optional[str], frequency: Optional[str]) -> Iterable[EntityRecord]:
         return self.db.query_entities(entity_id, entity_code, entity_name, frequency)
