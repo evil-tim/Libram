@@ -65,12 +65,5 @@ INSERT INTO public.entity (id,code,"name",currency_id,datasource_id,config,"type
     ('d1d89fac-4e8f-4c47-af9f-be08016b8d1f'::uuid,'DMC','DMCI Holdings, Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "188", "security_id": "192"}','STOCK','DAILY',false,'Asia/Manila','2009-08-03 00:00:00+08'),
     ('7f3fadb4-ad95-488a-a2fa-fe48ac6cd550'::uuid,'FCG','Figaro Culinary Group Inc.',NULL,'77796ac5-b6c4-459f-be29-9248c48744d4'::uuid,'{"cmpy_id": "689", "security_id": "684"}','STOCK','DAILY',false,'Asia/Manila','2022-01-24 00:00:00+08'),
     ('4967e268-f790-46ec-ab4d-f7406349c0e5'::uuid,'WBTC','Wrapped Bitcoin - Arbitrum','51bfd3f0-8f50-4caa-8332-f1ff8bd2aeb3'::uuid,'3281dbe6-27e8-41dd-a057-38e2c102fae2'::uuid,'{"pool_fee": "500", "source_token_address": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", "target_token_address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"}','CRYPTOCURRENCY','CONTINUOUS',true,'Etc/Universal',NULL);
-
--- Explicitly enable WBTC; CONTINUOUS entities are not activated automatically.
-INSERT INTO public.snapshot_state (entity_id, interval_seconds, next_due_at)
-SELECT id, 900, now()
-FROM public.entity
-WHERE code = 'WBTC' AND frequency = 'CONTINUOUS'
-ON CONFLICT (entity_id) DO UPDATE
-SET interval_seconds = EXCLUDED.interval_seconds,
-    enabled = true;
+INSERT INTO public.snapshot_state (entity_id,enabled,interval_seconds,next_due_at,lease_token,lease_expires_at,worker_id,attempt_count,consecutive_failures,last_started_at,last_succeeded_at,last_failed_at,last_observed_at,last_duration_ms,last_error,created_at,updated_at) VALUES
+    ('4967e268-f790-46ec-ab4d-f7406349c0e5'::uuid,true,300,'2026-08-24 16:46:04.505856+08',NULL,NULL,NULL,0,0,NULL,NULL,NULL,NULL,NULL,NULL,'2026-08-24 16:46:04.505856+08','2026-08-24 16:46:04.505856+08');
