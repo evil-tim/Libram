@@ -61,14 +61,10 @@ Domain packages
 Supporting packages
   price_analysis/                   pure calculations and comparison helpers
   price_sources/                    datasource plugin implementations
-    web3_datasource.py              abstract on-chain snapshot datasource
-    uniswap_datasource.py           Uniswap V3 snapshot datasource
     web3/                           Web3 clients, ERC20 metadata, ABIs, and quotes
   libram_database/db.py             SQLAlchemy Core database layer
   libram_types/                    core dataclasses
 ```
-
-`client.py` has been removed from the domain managers. The public manager classes are now named `PriceManagerService`, `FundamentalsManagerService`, `PortfolioManagerService`, and `PriceSchedulerService`, and imports should use their `service.py` modules.
 
 ## Server and lifecycle
 
@@ -92,8 +88,7 @@ The dependency providers in `dependencies.py` load `LIBRAM_DB`, construct `Datab
 PostgreSQL. Schema and seed data:
 
 - `schema.sql` — tables and indexes for datasource, entity, price, task, fundamentals, portfolios, orders, dividends, portfolio dividend fees, and snapshot state. Portfolio rows include an optional description.
-- `data.sql` — seed datasource and entity rows, including the sample Uniswap/Arbitrum WBTC snapshot entity.
-- `snapshot_state` — durable scheduling state for explicitly enabled `CONTINUOUS` entities.
+- `data.sql` — seed datasource, entity and scheduling state rows.
 
 DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated setup is safe.
 
@@ -125,15 +120,19 @@ characters). Portfolio totals-by-entity responses include each entity's
 
 When adding an endpoint, put it in the route module matching its concern and keep the handler a thin HTTP adapter: parse/validate request data, call a service or pure domain function, translate expected domain errors to `HTTPException`, and return the result.
 
-## Task system
+## Price fetching scheduling system
+
+### Historical price fetching task system
 
 The scheduler creates `task` rows for missing price ranges; the executor processes them:
 
-1. `cli_schedule.py` or the server's APScheduler job scans entities and creates `OPEN` tasks.
+1. `cli_schedule.py` or the server's APScheduler job scans entities that have the `DAILY` frequency and creates `OPEN` tasks.
 2. `cli_scheduler.py` / `price_scheduler/executor.py` polls for `OPEN` tasks, locks them as `IN_PROGRESS`, fetches prices, then marks them `COMPLETED` or `FAILED`.
 3. Failed tasks use exponential backoff (`retry_delay * 3^retry_count`).
 
 `price_scheduler/service.py` contains task-generation logic. `price_scheduler/executor.py` contains worker execution logic. The server lifecycle only hooks in the task-generation scheduler; it does not replace the standalone executor.
+
+### Price snapshot fetching system
 
 Snapshot execution is separate from the historical task system. `snapshot_scheduler/executor.py` polls durable `snapshot_state` leases, calls `PriceManagerService.fetch_snapshot_and_store()`, and reschedules with fixed delay or bounded retry backoff. In the container, supervisord runs `server`, `scheduler`, and `snapshot_scheduler` as independent programs. Snapshot shutdown allows up to 360 seconds for in-flight RPC work; historical workers have a 30-second bounded stop wait.
 
@@ -144,11 +143,11 @@ Each datasource subclasses `BaseDatasource` and implements one or both capabilit
 - historical prices: `fetch_prices(entity, start, end) -> Iterable[PriceRecord]`;
 - current observations: `fetch_price(entity) -> PriceRecord`.
 
-`BaseDatasource` is no longer abstract at either method: an unsupported capability
-raises `UnsupportedDatasourceOperationError`. Historical task processing must use
-`fetch_prices`; snapshot execution must use `fetch_price`.
+`BaseDatasource` implements both as inoperable stub methods: an unsupported capability
+raises `UnsupportedDatasourceOperationError`. Historical task processing must override
+`fetch_prices`; snapshot execution must override `fetch_price`.
 
-REST/JSON sources extend `RestJSONDatasource` and implement `build_request_params(...)` and `parse_price_data(...)`. Datasources are loaded dynamically from `datasource.implementation` (`module.path:ClassName`); entity configuration is merged over datasource configuration.
+Datasources are loaded dynamically from `datasource.implementation` (`module.path:ClassName`); entity configuration is merged over datasource configuration.
 
 Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_edge_datasource.py`, `coindesk_ohlc_datasource.py`, `ofx_forex_datasource.py`, `bpi_fund_datasource.py`, `manulife_fund_datasource.py`, `slamc_fund_datasource.py`, and `uniswap_datasource.py`.
 
