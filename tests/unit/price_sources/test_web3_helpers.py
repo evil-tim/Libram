@@ -60,7 +60,7 @@ def test_get_cached_contract_uses_normalized_address(monkeypatch):
 
     # Act
     raw = "Aa" * 20  # mixed-case hex
-    result = web3_module.get_cached_contract("http://rpc", raw, "abi.json")
+    result = web3_module.get_cached_contract("http://rpc", raw, "abi.json", web3=dummy)
 
     # Assert: contract factory received checksumed address via our dummy
     assert result["address"] == dummy.to_checksum_address("0x" + raw)

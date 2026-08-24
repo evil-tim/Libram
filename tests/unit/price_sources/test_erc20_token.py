@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+import weakref
 from unittest.mock import Mock
 
 import pytest
@@ -13,8 +13,13 @@ class _Provider:
     endpoint_uri = RPC_URL
 
 
+class _Web3:
+    def __init__(self):
+        self.provider = _Provider()
+
+
 def _web3():
-    return SimpleNamespace(provider=_Provider())
+    return _Web3()
 
 
 def _contract(name="Example Token", decimals=6, symbol="EXT"):
@@ -40,7 +45,7 @@ def test_initialization_loads_contract_and_metadata(monkeypatch):
     assert token.decimals == 6
     assert token.symbol == "EXT"
     get_cached_contract.assert_called_once_with(
-        RPC_URL, TOKEN_ADDRESS, "ERC20_ABI.json"
+        RPC_URL, TOKEN_ADDRESS, "ERC20_ABI.json", web3=token._web3
     )
 
 
@@ -100,6 +105,39 @@ def test_metadata_values_are_preserved(monkeypatch, name, decimals, symbol):
     token = ERC20Token(TOKEN_ADDRESS, _web3())
 
     assert (token.name, token.decimals, token.symbol) == (name, decimals, symbol)
+
+
+def test_metadata_cache_does_not_cross_web3_instances(monkeypatch):
+    first_contract = _contract(name="First", decimals=6, symbol="ONE")
+    second_contract = _contract(name="Second", decimals=18, symbol="TWO")
+    monkeypatch.setattr(
+        "price_sources.web3.erc20_token.get_cached_contract",
+        Mock(side_effect=[first_contract, second_contract]),
+    )
+
+    first_web3 = _web3()
+    second_web3 = _web3()
+    first = ERC20Token(TOKEN_ADDRESS, first_web3)
+    second = ERC20Token(TOKEN_ADDRESS, second_web3)
+
+    assert (first.name, first.decimals, first.symbol) == ("First", 6, "ONE")
+    assert (second.name, second.decimals, second.symbol) == ("Second", 18, "TWO")
+
+
+def test_metadata_cache_retains_web3_identity(monkeypatch):
+    web3 = _web3()
+    contract = _contract(name="Retained", decimals=18, symbol="RET")
+    monkeypatch.setattr(
+        "price_sources.web3.erc20_token.get_cached_contract",
+        Mock(return_value=contract),
+    )
+
+    token = ERC20Token(TOKEN_ADDRESS, web3)
+    reference = weakref.ref(web3)
+    del token
+    del web3
+
+    assert reference() is not None
 
 
 # Provider/client construction and Web3 connectivity remain intentionally out of scope.

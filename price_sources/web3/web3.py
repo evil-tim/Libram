@@ -14,13 +14,36 @@ from web3.contract import Contract
 
 
 _CONTRACT_CACHE_MAXSIZE = 32
+_TOKEN_METADATA_CACHE_MAXSIZE = 32
 _WEB3_CACHE_MAXSIZE = 8
+
+
+class _IdentityKey:
+    """Hashable cache key component that compares objects by identity."""
+
+    __slots__ = ("_hash", "value")
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+        # Retaining value in the key prevents Python from reusing this id while
+        # the cached entry exists.
+        self._hash = id(value)
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _IdentityKey) and self.value is other.value
+
 
 # These are explicit caches rather than lru_cache instances because a failed
 # provider must be evicted by its own key. functools.lru_cache only exposes a
 # global cache_clear(), which would discard healthy providers as well.
 _web3_cache: OrderedDict[tuple[str, int], Web3] = OrderedDict()
-_contract_cache: OrderedDict[tuple[int, str, str], Contract] = OrderedDict()
+_contract_cache: OrderedDict[tuple[_IdentityKey, str, str], Contract] = OrderedDict()
+_token_metadata_cache: OrderedDict[tuple[_IdentityKey, str], tuple[str, int, str]] = (
+    OrderedDict()
+)
 _cache_lock = threading.Lock()
 
 
@@ -31,10 +54,12 @@ def get_cached_contract_abi(filename: str) -> list[dict[str, Any]]:
         return json.load(content_file)
 
 
-def get_cached_contract(rpc_url: str, address: str, abi_filename: str) -> Contract:
+def get_cached_contract(
+    rpc_url: str, address: str, abi_filename: str, web3: Web3 | None = None
+) -> Contract:
     """Return a contract cached against the specific Web3 instance it uses."""
-    web3 = get_web3_instance(rpc_url)
-    cache_key = (id(web3), address, abi_filename)
+    web3 = web3 if web3 is not None else get_web3_instance(rpc_url)
+    cache_key = (_IdentityKey(web3), address, abi_filename)
 
     # The cache lock protects only dictionary operations. Contract creation and
     # provider validation are deliberately outside it so a slow RPC endpoint
@@ -65,7 +90,35 @@ def get_cached_contract(rpc_url: str, address: str, abi_filename: str) -> Contra
     return contract
 
 
-def _normalize_address(web3: Web3, address: str) -> ChecksumAddress:
+def get_cached_token_metadata(
+    web3: object, address: str, contract: Contract
+) -> tuple[str, int, str]:
+    """Return ERC20 metadata cached for this live Web3 client and token."""
+    cache_key = (_IdentityKey(web3), address)
+    with _cache_lock:
+        metadata = _token_metadata_cache.get(cache_key)
+        if metadata is not None:
+            _token_metadata_cache.move_to_end(cache_key)
+            return metadata
+
+    metadata = (
+        contract.functions.name().call(),
+        contract.functions.decimals().call(),
+        contract.functions.symbol().call(),
+    )
+    with _cache_lock:
+        existing = _token_metadata_cache.get(cache_key)
+        if existing is not None:
+            _token_metadata_cache.move_to_end(cache_key)
+            return existing
+        _token_metadata_cache[cache_key] = metadata
+        _token_metadata_cache.move_to_end(cache_key)
+        while len(_token_metadata_cache) > _TOKEN_METADATA_CACHE_MAXSIZE:
+            _token_metadata_cache.popitem(last=False)
+    return metadata
+
+
+def _normalize_address(web3: Any, address: str) -> ChecksumAddress:
     """Normalize and validate an Ethereum address, returning a checksum address.
 
     Accepts addresses with or without the '0x' prefix. Raises ValueError for
@@ -122,7 +175,7 @@ def _cache_evict_web3(
         current = _web3_cache.get(key)
         if current is not None and (expected is None or current is expected):
             del _web3_cache[key]
-            _evict_contracts_for_web3_id(id(current))
+            _evict_caches_for_web3(current)
 
 
 def _cache_store_web3(rpc_url: str, timeout_sec: int, web3: Web3) -> Web3:
@@ -139,18 +192,20 @@ def _cache_store_web3(rpc_url: str, timeout_sec: int, web3: Web3) -> Web3:
         _web3_cache.move_to_end(key)
         while len(_web3_cache) > _WEB3_CACHE_MAXSIZE:
             _, evicted_web3 = _web3_cache.popitem(last=False)
-            _evict_contracts_for_web3_id(id(evicted_web3))
+            _evict_caches_for_web3(evicted_web3)
     return web3
 
 
-def _evict_contracts_for_web3_id(web3_id: int) -> None:
-    """Remove contracts belonging to one Web3 instance.
+def _evict_caches_for_web3(web3: object) -> None:
+    """Remove cached objects belonging to one Web3 instance.
 
     Called while _cache_lock is held. It is kept separate to make that lock
     requirement obvious and prevent accidental nested locking.
     """
-    for key in [key for key in _contract_cache if key[0] == web3_id]:
+    for key in [key for key in _contract_cache if key[0].value is web3]:
         del _contract_cache[key]
+    for key in [key for key in _token_metadata_cache if key[0].value is web3]:
+        del _token_metadata_cache[key]
 
 
 def get_web3_instance(
@@ -188,6 +243,7 @@ def get_web3_instance(
 __all__ = [
     "get_cached_contract",
     "get_cached_contract_abi",
+    "get_cached_token_metadata",
     "get_web3_instance",
 ]
 
@@ -197,4 +253,5 @@ def _clear_caches() -> None:
     with _cache_lock:
         _web3_cache.clear()
         _contract_cache.clear()
+        _token_metadata_cache.clear()
     get_cached_contract_abi.cache_clear()
