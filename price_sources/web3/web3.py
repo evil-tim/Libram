@@ -2,6 +2,7 @@ import json
 import threading
 import time
 from collections import OrderedDict
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -148,7 +149,16 @@ def _normalize_address(web3: Web3, address: str) -> ChecksumAddress:
 
 
 def _is_web3_valid(web3: Web3 | None) -> bool:
-    return web3 is not None and web3.is_connected()
+    # sanity check - not None
+    if web3 is None:
+        return False
+    # initial call to is_connected - can fail here but may force reconnection so this failure may be transient
+    is_connected = web3.is_connected()
+    # short path - is still connected
+    if is_connected:
+        return True
+    # second call, real connected status? maybe?
+    return web3.is_connected()
 
 
 def _create_web3_instance(rpc_url: str, timeout_sec: int = 30) -> Web3:
@@ -157,7 +167,8 @@ def _create_web3_instance(rpc_url: str, timeout_sec: int = 30) -> Web3:
     This helper intentionally does not cache. Cache lookup, validation, and
     replacement are coordinated by get_web3_instance below.
     """
-    print("Connecting web3 - " + rpc_url)
+    thread_ident = threading.get_ident()
+    print(f"{datetime.now().isoformat()} : [{thread_ident}] Connecting web3 - {rpc_url}")
     return Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": timeout_sec}))
 
 
@@ -220,12 +231,15 @@ def get_web3_instance(
     backoff_sec: int = 5,
 ) -> Web3:
     """Get a validated Web3 client, retrying only the requested cache key."""
+    thread_ident = threading.get_ident()
     for count in range(retries):
         # get from cache and return it if valid otherwise evict it from cache
         web3 = _cache_get_web3(rpc_url, timeout_sec)
         if web3 is not None:
             if _is_web3_valid(web3):
+                print(f"{datetime.now().isoformat()} : [{thread_ident}] Using cached Web3 {id(web3)}")
                 return web3
+            print(f"{datetime.now().isoformat()} : [{thread_ident}] Cached Web3 {id(web3)} is not valid. connected={web3.is_connected()}")
             _cache_evict_web3(rpc_url, timeout_sec, expected=web3)
 
         # Do not hold _cache_lock while constructing or validating the client:
@@ -233,12 +247,15 @@ def get_web3_instance(
         # every other RPC endpoint sharing this process.
         web3 = _create_web3_instance(rpc_url, timeout_sec)
         if _is_web3_valid(web3):
-            return _cache_store_web3(rpc_url, timeout_sec, web3)
+            print(f"{datetime.now().isoformat()} : [{thread_ident}] Made fresh Web3 {id(web3)}")
+            web3 = _cache_store_web3(rpc_url, timeout_sec, web3)
+            print(f"{datetime.now().isoformat()} : [{thread_ident}] Using Web3 {id(web3)}")
+            return web3
 
         _cache_evict_web3(rpc_url, timeout_sec, expected=web3)
         if count < retries - 1:
             print(
-                f"Web3 instance is not connected on attempt {count + 1}/{retries}, retrying after backoff"
+                f"{datetime.now().isoformat()} : [{thread_ident}] Web3 instance is not connected on attempt {count + 1}/{retries}, retrying after backoff"
             )
             time.sleep(backoff_sec)
 

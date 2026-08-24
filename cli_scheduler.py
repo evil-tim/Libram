@@ -16,7 +16,7 @@ def main():
         print("Error: LIBRAM_DB environment variable not set")
         return
 
-    args = dict()
+    args = {}
     max_retries = os.getenv("LIBRAM_SCHEDULER_MAX_RETRIES")
     retry_delay_seconds = os.getenv("LIBRAM_SCHEDULER_RETRY_DELAY_SECONDS")
     thread_count = os.getenv("LIBRAM_SCHEDULER_THREADS")
