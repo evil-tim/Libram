@@ -3,7 +3,7 @@ from typing import cast
 from web3 import Web3
 from web3.contract import Contract
 
-from price_sources.web3.web3 import get_cached_contract
+from price_sources.web3.web3 import get_cached_contract, get_cached_token_metadata
 
 """ERC20Token class represents an ERC20 token on the Ethereum blockchain, providing methods to retrieve token information such as name, symbol,
 and decimals using a Web3 instance. Only implements the ERC20 standard functions needed for price conversion, not the full ERC20 interface. The
@@ -15,6 +15,7 @@ class ERC20Token:
 
     def __init__(self, address: str, web3: Web3):
         self.address = address
+        self._web3 = web3
         provider: Web3.HTTPProvider = cast(Web3.HTTPProvider, web3.provider)
         self.rpc_url = str(provider.endpoint_uri)
         self._get_contract()
@@ -31,9 +32,9 @@ class ERC20Token:
         self._contract = contract
 
     def _load_token_info(self) -> None:
-        self.name: str = self._contract.functions.name().call()
-        self.decimals: int = self._contract.functions.decimals().call()
-        self.symbol: str = self._contract.functions.symbol().call()
+        self.name, self.decimals, self.symbol = get_cached_token_metadata(
+            self._web3, self.address, self._contract
+        )
 
     def to_string(self) -> str:
         return (
