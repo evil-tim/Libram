@@ -10,7 +10,12 @@ from eth_typing import ChecksumAddress
 from web3 import Web3
 from web3.contract import Contract
 
-"""Utility functions for Web3 service helpers."""
+"""Utility functions for Web3 service helpers. Also includes cache implementationd for the following:
+* ABI JSON - keyed by the filename
+* Contract - keyed by the Web3 hash, contract address, ABI filename
+* Token Metadata - keyed by the Web3 hash, token address
+* Web3 - keyed by the RPC url, timeout
+"""
 
 
 _CONTRACT_CACHE_MAXSIZE = 32
@@ -91,7 +96,7 @@ def get_cached_contract(
 
 
 def get_cached_token_metadata(
-    web3: object, address: str, contract: Contract
+    web3: Web3, address: str, contract: Contract
 ) -> tuple[str, int, str]:
     """Return ERC20 metadata cached for this live Web3 client and token."""
     cache_key = (_IdentityKey(web3), address)
@@ -118,7 +123,7 @@ def get_cached_token_metadata(
     return metadata
 
 
-def _normalize_address(web3: Any, address: str) -> ChecksumAddress:
+def _normalize_address(web3: Web3, address: str) -> ChecksumAddress:
     """Normalize and validate an Ethereum address, returning a checksum address.
 
     Accepts addresses with or without the '0x' prefix. Raises ValueError for
