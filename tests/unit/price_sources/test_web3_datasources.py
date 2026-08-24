@@ -117,7 +117,10 @@ def test_erc20_token_loads_metadata(monkeypatch):
     assert token.symbol == "EXT"
     assert token.to_string() == f"{TOKEN_ADDRESS} - EXT - Example Token - 10^6"
     get_contract.assert_called_once_with(
-        "https://rpc.example.test", TOKEN_ADDRESS, "ERC20_ABI.json"
+        "https://rpc.example.test",
+        TOKEN_ADDRESS,
+        "ERC20_ABI.json",
+        web3=token._web3,
     )
 
 
