@@ -42,6 +42,9 @@ def _executor_settings() -> dict[str, int]:
             "LIBRAM_SNAPSHOT_MAX_BACKOFF_SECONDS", 1800
         ),
         "rpc_concurrency": _integer_setting("LIBRAM_SNAPSHOT_RPC_CONCURRENCY", 2),
+        "shutdown_timeout_seconds": _integer_setting(
+            "LIBRAM_SNAPSHOT_SHUTDOWN_TIMEOUT_SECONDS", 360
+        ),
     }
 
 

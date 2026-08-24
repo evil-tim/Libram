@@ -342,7 +342,10 @@ class Database:
             raise ValueError("retry and backoff values are invalid")
         query = text("""UPDATE snapshot_state SET lease_token = NULL, lease_expires_at = NULL, worker_id = NULL,
             consecutive_failures = consecutive_failures + 1, last_failed_at = now(), last_error = :error,
-            next_due_at = now() + (LEAST(:max_backoff, :retry_delay * power(2, consecutive_failures + 1) + :jitter) * interval '1 second'), updated_at = now()
+            -- ``consecutive_failures`` is the value before this update.  The
+            -- first failure should wait one retry interval, then back off by
+            -- powers of two on subsequent failures.
+            next_due_at = now() + (LEAST(:max_backoff, :retry_delay * power(2, consecutive_failures) + :jitter) * interval '1 second'), updated_at = now()
             WHERE entity_id = :entity_id AND lease_token = :lease_token""")
         with self.engine.begin() as conn:
             result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "error": error, "retry_delay": retry_delay_seconds, "max_backoff": max_backoff_seconds, "jitter": jitter_seconds})

@@ -155,6 +155,7 @@ Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_
 | `LIBRAM_SNAPSHOT_RETRY_DELAY_SECONDS` | No | `30` |
 | `LIBRAM_SNAPSHOT_MAX_BACKOFF_SECONDS` | No | `1800` |
 | `LIBRAM_SNAPSHOT_RPC_CONCURRENCY` | No | `2` |
+| `LIBRAM_SNAPSHOT_SHUTDOWN_TIMEOUT_SECONDS` | No | `360` |
 
 ## Project conventions
 
