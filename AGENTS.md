@@ -87,7 +87,7 @@ The dependency providers in `dependencies.py` load `LIBRAM_DB`, construct `Datab
 
 PostgreSQL. Schema and seed data:
 
-- `schema.sql` — tables and indexes for datasource, entity, price, task, fundamentals, portfolios, orders, dividends, portfolio dividend fees, and snapshot state. Portfolio rows include an optional description.
+- `schema.sql` — tables and indexes for datasource, entity, price, task, fundamentals, portfolios, orders, dividends, portfolio dividend fees, and snapshot state.
 - `data.sql` — seed datasource, entity and scheduling state rows.
 
 DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated setup is safe.
@@ -103,10 +103,6 @@ psql -U libram -d libram -f data.sql
 ## REST API organization
 
 All REST endpoints are under `/api/v1` and are also exposed as MCP tools through `/mcp`.
-
-Portfolio create/update requests accept an optional `description` (up to 1000
-characters). Portfolio totals-by-entity responses include each entity's
-`current_value_percentage` relative to the portfolio's aggregate current value.
 
 | Route module | Concern | Main endpoints |
 |---|---|---|
