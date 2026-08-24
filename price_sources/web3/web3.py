@@ -14,6 +14,7 @@ from web3.contract import Contract
 
 
 _CONTRACT_CACHE_MAXSIZE = 32
+_TOKEN_METADATA_CACHE_MAXSIZE = 32
 _WEB3_CACHE_MAXSIZE = 8
 
 # These are explicit caches rather than lru_cache instances because a failed
@@ -21,6 +22,7 @@ _WEB3_CACHE_MAXSIZE = 8
 # global cache_clear(), which would discard healthy providers as well.
 _web3_cache: OrderedDict[tuple[str, int], Web3] = OrderedDict()
 _contract_cache: OrderedDict[tuple[int, str, str], Contract] = OrderedDict()
+_token_metadata_cache: OrderedDict[tuple[int, str], tuple[str, int, str]] = OrderedDict()
 _cache_lock = threading.Lock()
 
 
@@ -63,6 +65,34 @@ def get_cached_contract(rpc_url: str, address: str, abi_filename: str) -> Contra
         while len(_contract_cache) > _CONTRACT_CACHE_MAXSIZE:
             _contract_cache.popitem(last=False)
     return contract
+
+
+def get_cached_token_metadata(
+    web3: Web3, address: str, contract: Contract
+) -> tuple[str, int, str]:
+    """Return ERC20 metadata cached for this live Web3 client and token."""
+    cache_key = (id(web3), address)
+    with _cache_lock:
+        metadata = _token_metadata_cache.get(cache_key)
+        if metadata is not None:
+            _token_metadata_cache.move_to_end(cache_key)
+            return metadata
+
+    metadata = (
+        contract.functions.name().call(),
+        contract.functions.decimals().call(),
+        contract.functions.symbol().call(),
+    )
+    with _cache_lock:
+        existing = _token_metadata_cache.get(cache_key)
+        if existing is not None:
+            _token_metadata_cache.move_to_end(cache_key)
+            return existing
+        _token_metadata_cache[cache_key] = metadata
+        _token_metadata_cache.move_to_end(cache_key)
+        while len(_token_metadata_cache) > _TOKEN_METADATA_CACHE_MAXSIZE:
+            _token_metadata_cache.popitem(last=False)
+    return metadata
 
 
 def _normalize_address(web3: Web3, address: str) -> ChecksumAddress:
@@ -151,6 +181,8 @@ def _evict_contracts_for_web3_id(web3_id: int) -> None:
     """
     for key in [key for key in _contract_cache if key[0] == web3_id]:
         del _contract_cache[key]
+    for key in [key for key in _token_metadata_cache if key[0] == web3_id]:
+        del _token_metadata_cache[key]
 
 
 def get_web3_instance(
@@ -188,6 +220,7 @@ def get_web3_instance(
 __all__ = [
     "get_cached_contract",
     "get_cached_contract_abi",
+    "get_cached_token_metadata",
     "get_web3_instance",
 ]
 
@@ -197,4 +230,5 @@ def _clear_caches() -> None:
     with _cache_lock:
         _web3_cache.clear()
         _contract_cache.clear()
+        _token_metadata_cache.clear()
     get_cached_contract_abi.cache_clear()
