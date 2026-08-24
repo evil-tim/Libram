@@ -61,6 +61,9 @@ Domain packages
 Supporting packages
   price_analysis/                   pure calculations and comparison helpers
   price_sources/                    datasource plugin implementations
+    web3_datasource.py              abstract on-chain snapshot datasource
+    uniswap_datasource.py           Uniswap V3 snapshot datasource
+    web3/                           Web3 clients, ERC20 metadata, ABIs, and quotes
   libram_database/db.py             SQLAlchemy Core database layer
   libram_types/                    core dataclasses
 ```
@@ -88,8 +91,9 @@ The dependency providers in `dependencies.py` load `LIBRAM_DB`, construct `Datab
 
 PostgreSQL. Schema and seed data:
 
-- `schema.sql` — tables and indexes for datasource, entity, price, task, fundamentals, portfolios, orders, dividends, and portfolio dividend fees.
-- `data.sql` — seed datasource and entity rows.
+- `schema.sql` — tables and indexes for datasource, entity, price, task, fundamentals, portfolios, orders, dividends, portfolio dividend fees, and snapshot state. Portfolio rows include an optional description.
+- `data.sql` — seed datasource and entity rows, including the sample Uniswap/Arbitrum WBTC snapshot entity.
+- `snapshot_state` — durable scheduling state for explicitly enabled `CONTINUOUS` entities.
 
 DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so repeated setup is safe.
 
@@ -104,6 +108,10 @@ psql -U libram -d libram -f data.sql
 ## REST API organization
 
 All REST endpoints are under `/api/v1` and are also exposed as MCP tools through `/mcp`.
+
+Portfolio create/update requests accept an optional `description` (up to 1000
+characters). Portfolio totals-by-entity responses include each entity's
+`current_value_percentage` relative to the portfolio's aggregate current value.
 
 | Route module | Concern | Main endpoints |
 |---|---|---|
@@ -131,12 +139,45 @@ Snapshot execution is separate from the historical task system. `snapshot_schedu
 
 ## Datasource plugin pattern
 
-Each datasource subclasses `BaseDatasource` and implements:
-`fetch_prices(entity, start, end) -> Iterable[PriceRecord]`.
+Each datasource subclasses `BaseDatasource` and implements one or both capabilities:
+
+- historical prices: `fetch_prices(entity, start, end) -> Iterable[PriceRecord]`;
+- current observations: `fetch_price(entity) -> PriceRecord`.
+
+`BaseDatasource` is no longer abstract at either method: an unsupported capability
+raises `UnsupportedDatasourceOperationError`. Historical task processing must use
+`fetch_prices`; snapshot execution must use `fetch_price`.
 
 REST/JSON sources extend `RestJSONDatasource` and implement `build_request_params(...)` and `parse_price_data(...)`. Datasources are loaded dynamically from `datasource.implementation` (`module.path:ClassName`); entity configuration is merged over datasource configuration.
 
-Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_edge_datasource.py`, `coindesk_ohlc_datasource.py`, `ofx_forex_datasource.py`, `bpi_fund_datasource.py`, `manulife_fund_datasource.py`, and `slamc_fund_datasource.py`.
+Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_edge_datasource.py`, `coindesk_ohlc_datasource.py`, `ofx_forex_datasource.py`, `bpi_fund_datasource.py`, `manulife_fund_datasource.py`, `slamc_fund_datasource.py`, and `uniswap_datasource.py`.
+
+### Web3 and Uniswap sources
+
+`price_sources/web3_datasource.py` provides `Web3DataSource`, the common
+snapshot-only base for blockchain sources. It requires these merged datasource
+configuration keys:
+
+- `rpc_url` — HTTP RPC endpoint;
+- `contract_address` — contract used to obtain the quote;
+- `source_token_address` — ERC20 token being priced; and
+- `target_token_address` — ERC20 denomination token.
+
+`pool_fee` is optional and defaults to `0`; it identifies the Uniswap V3 pool fee
+when used by `UniswapDataSource`. The concrete implementation is registered as
+`price_sources.uniswap_datasource:UniswapDataSource`. It obtains ERC20 name,
+symbol, and decimals through `price_sources/web3/erc20_token.py`, then calls the
+Uniswap V3 quoter through `price_sources/web3/uniswap.py`. ABI files live beside
+those helpers in `price_sources/web3/`.
+
+Web3 clients and contract/token metadata use bounded in-process caches. Contract
+and token caches are keyed by the identity of the live Web3 client, not merely by
+RPC URL; do not reuse cached contract objects across replacement clients.
+
+Web3 sources currently support snapshots, not historical ranges. Their
+`fetch_price()` result must be a single, timezone-aware, non-future `PriceRecord`;
+`PriceManagerService.fetch_snapshot_and_store()` normalizes the timestamp to UTC
+and persists it without historical-gap checks.
 
 ## Environment variables
 
@@ -156,6 +197,9 @@ Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_
 | `LIBRAM_SNAPSHOT_MAX_BACKOFF_SECONDS` | No | `1800` |
 | `LIBRAM_SNAPSHOT_RPC_CONCURRENCY` | No | `2` |
 | `LIBRAM_SNAPSHOT_SHUTDOWN_TIMEOUT_SECONDS` | No | `360` |
+| `LIBRAM_WEB3_RETRIES` | No | `3` retries when creating a Web3 client |
+| `LIBRAM_WEB3_TIMEOUT` | No | `30` RPC connection timeout in seconds |
+| `LIBRAM_WEB3_BACKOFF` | No | `5` seconds between Web3 connection retries |
 
 ## Project conventions
 
@@ -164,7 +208,8 @@ Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_
 - Core domain types are dataclasses in `libram_types/`. Pydantic models are used for HTTP request models, primarily in `fundamentals_management/models.py` and `portfolio_management/models.py`.
 - Pure analysis functions live in `price_analysis/` and should not depend on the database or FastAPI.
 - Unit tests live outside production packages under `tests/unit/`, mirroring the source domains.
-- Docker production setup is in `Dockerfile` and `docker-compose.yml`; supervisor runs the server and standalone scheduler executor in one container.
+- Docker production setup is in `Dockerfile` and `docker-compose.yml`; supervisor runs the server, historical scheduler executor, and snapshot scheduler as independent programs in one container.
+- Web3/Uniswap support is provided by the `web3` and `websockets` runtime dependencies; RPC access is configured per datasource/entity rather than through a single global endpoint.
 - Ruff cleanup is part of the current codebase standard: preserve clean imports, formatting, and lint-compatible code.
 
 ## Testing
@@ -197,6 +242,8 @@ uv run ruff format --check tests/unit
 - `tests/unit/price_management/` covers datasource loading and price fetch/store orchestration.
 - `tests/unit/price_scheduler/` covers missing-range generation and executor behavior without sleeping or live services.
 - `tests/unit/portfolio_management/` covers portfolio, order, totals, dividend, and fee behavior.
+- `tests/unit/price_sources/test_web3_datasources.py` covers Web3/Uniswap snapshot construction, token-unit conversion, ABI loading, and Web3 configuration validation.
+- `tests/unit/price_sources/test_web3_helpers.py` covers Ethereum address normalization and Web3/contract cache behavior without live RPC calls.
 - Keep tests outside production packages and mirror the production concern they exercise.
 - Test behavior rather than implementation details. Use real domain logic where practical; mock only external boundaries such as HTTP, database, and scheduler I/O.
 - Use small explicit payloads and expected records. Do not contact live services from unit tests.
@@ -260,7 +307,8 @@ For a feature spanning multiple concerns, split parsing, computation, and orches
 | `server.py` | FastAPI/MCP assembly and APScheduler lifecycle |
 | `dependencies.py` | FastAPI service/database dependency providers |
 | `routes/*.py` | REST routes grouped by concern |
-| `cli_scheduler.py` | Standalone threaded scheduler executor |
+| `cli_scheduler.py` | Standalone threaded historical scheduler executor |
+| `cli_snapshot_scheduler.py` | Standalone recurring snapshot executor |
 | `cli_schedule.py` | Manual task generation CLI |
 | `cli_fetch.py` | Manual price-fetch CLI |
 | `fundamentals_management/service.py` | Fundamentals business logic |
@@ -276,8 +324,12 @@ For a feature spanning multiple concerns, split parsing, computation, and orches
 | `price_management/datasource.py` | Base datasource abstraction |
 | `price_scheduler/service.py` | Missing-price task generation |
 | `price_scheduler/executor.py` | Worker polling and task processing |
+| `snapshot_scheduler/executor.py` | Durable snapshot claim, lease, retry, and shutdown worker |
 | `price_analysis/` | SMA, EMA, RSI, comparison, drawdown, and date utilities |
 | `price_sources/` | Datasource implementations |
+| `price_sources/web3_datasource.py` | Common Web3 snapshot datasource |
+| `price_sources/uniswap_datasource.py` | Uniswap V3 datasource adapter |
+| `price_sources/web3/` | Web3 client/cache helpers, ERC20 support, Uniswap quote helper, and ABI JSON files |
 | `libram_database/db.py` | Database layer and SQLAlchemy helpers |
 | `libram_types/` | Core dataclasses |
 | `schema.sql` | Database DDL |
