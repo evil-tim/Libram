@@ -128,15 +128,18 @@ class SnapshotSchedulerExecutor:
 
     def execute_once(self) -> bool:
         """Claim and execute at most one row; return whether work was claimed."""
+        thread_ident = threading.get_ident()
         token = uuid4()
         state = self.db.claim_due_snapshot(token, self.worker_id, self.lease_seconds)
         if state is None:
             return False
+        print(f"{datetime.now().isoformat()} : [{thread_ident}] Claimed snapshot job for entity {state.entity_id}")
         started = self.clock()
         try:
             provider_key = self._provider_key(state.entity_id)
             with self._limits(provider_key):
                 self.price_manager_client.fetch_snapshot_and_store(state.entity_id)
+                print(f"{datetime.now().isoformat()} : [{thread_ident}] Snapshot for {state.entity_id} created")
         except Exception as error:  # noqa: BLE001 - recurring streams must survive failures
             message = f"{type(error).__name__}: {error}"[:2000]
             delay_jitter = int(
@@ -152,9 +155,11 @@ class SnapshotSchedulerExecutor:
                 self.max_backoff_seconds,
                 delay_jitter,
             )
+            print(f"{datetime.now().isoformat()} : [{thread_ident}] Snapshot for {state.entity_id} failed")
             return True
         duration_ms = max(0, int((self.clock() - started).total_seconds() * 1000))
         self.db.complete_snapshot(state.entity_id, token, self.clock(), duration_ms)
+        print(f"{datetime.now().isoformat()} : [{thread_ident}]Released snapshot job for entity {state.entity_id}")
         return True
 
     def _provider_key(self, entity_id: UUID) -> str:
