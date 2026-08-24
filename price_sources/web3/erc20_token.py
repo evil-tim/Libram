@@ -12,7 +12,6 @@ class is initialized with the token's contract address and a Web3 instance, and 
 
 
 class ERC20Token:
-
     def __init__(self, address: str, web3: Web3):
         self.address = address
         self._web3 = web3
@@ -23,7 +22,7 @@ class ERC20Token:
 
     def _get_contract(self) -> None:
         contract: Contract = get_cached_contract(
-            self.rpc_url, self.address, "ERC20_ABI.json"
+            self.rpc_url, self.address, "ERC20_ABI.json", web3=self._web3
         )
         if not contract:
             raise ValueError(
