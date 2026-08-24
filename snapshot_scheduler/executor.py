@@ -159,7 +159,7 @@ class SnapshotSchedulerExecutor:
             return True
         duration_ms = max(0, int((self.clock() - started).total_seconds() * 1000))
         self.db.complete_snapshot(state.entity_id, token, self.clock(), duration_ms)
-        print(f"{datetime.now().isoformat()} : [{thread_ident}]Released snapshot job for entity {state.entity_id}")
+        print(f"{datetime.now().isoformat()} : [{thread_ident}] Released snapshot job for entity {state.entity_id}")
         return True
 
     def _provider_key(self, entity_id: UUID) -> str:
