@@ -12,9 +12,13 @@ uv sync
 LIBRAM_DB="postgresql://user:***@localhost:5432/libram" \
   uv run fastapi dev server.py --app combined_app --port 6778
 
-# Run the standalone task executor
+# Run the standalone historical task executor
 LIBRAM_DB="postgresql://user:***@localhost:5432/libram" \
   uv run cli_scheduler.py
+
+# Run the standalone recurring snapshot executor
+LIBRAM_DB="postgresql://user:***@localhost:5432/libram" \
+  uv run cli_snapshot_scheduler.py
 
 # Fetch a specific entity manually
 LIBRAM_DB="..." uv run cli_fetch.py --entity_code RCR --start 2025-01-01T00:00:00 --end 2025-02-01T00:00:00
@@ -51,7 +55,8 @@ Domain packages
   fundamentals_management/service.py fundamentals business logic
   portfolio_management/service.py   coordinator for portfolio sub-services
   price_scheduler/service.py        missing-price task generation
-  price_scheduler/executor.py       threaded task worker
+  price_scheduler/executor.py        threaded historical task worker
+  snapshot_scheduler/executor.py    recurring snapshot worker
 
 Supporting packages
   price_analysis/                   pure calculations and comparison helpers
@@ -73,7 +78,9 @@ Supporting packages
 - configures CORS; and
 - owns the APScheduler lifecycle.
 
-The built-in APScheduler creates task-generation jobs for 08:00 and 20:00. It is started during the FastAPI lifespan startup and shut down during lifespan shutdown. The standalone `cli_scheduler.py` is a different component: it runs the worker executor that processes open tasks. Do not confuse task generation with task execution.
+The built-in APScheduler creates historical task-generation jobs for 08:00 and 20:00. It is started during the FastAPI lifespan startup and shut down during lifespan shutdown. The standalone `cli_scheduler.py` is a different component: it runs the historical worker executor that processes open tasks. The standalone `cli_snapshot_scheduler.py` is a third, independent process: it claims due rows in `snapshot_state` and performs recurring `fetch_price()` observations. Do not confuse historical task generation, historical task execution, and snapshot execution.
+
+Snapshot schedules are explicitly enabled by rows in `snapshot_state`; `CONTINUOUS` frequency alone does not activate an entity. The sample `data.sql` seed enables WBTC at a 15-minute interval. Snapshot state uses durable leases: a worker claims a row before performing the RPC call, and completion/failure updates are accepted only for the current lease token. If a worker dies or exceeds its lease, another worker can recover the row; this provides at-least-once observations, so a repeated quote is possible.
 
 The dependency providers in `dependencies.py` load `LIBRAM_DB`, construct `Database`, and build the service dependency chain. Route handlers receive services through FastAPI `Depends`; they must not instantiate database or service objects directly.
 
@@ -120,6 +127,8 @@ The scheduler creates `task` rows for missing price ranges; the executor process
 
 `price_scheduler/service.py` contains task-generation logic. `price_scheduler/executor.py` contains worker execution logic. The server lifecycle only hooks in the task-generation scheduler; it does not replace the standalone executor.
 
+Snapshot execution is separate from the historical task system. `snapshot_scheduler/executor.py` polls durable `snapshot_state` leases, calls `PriceManagerService.fetch_snapshot_and_store()`, and reschedules with fixed delay or bounded retry backoff. In the container, supervisord runs `server`, `scheduler`, and `snapshot_scheduler` as independent programs. Snapshot shutdown allows up to 360 seconds for in-flight RPC work; historical workers have a 30-second bounded stop wait.
+
 ## Datasource plugin pattern
 
 Each datasource subclasses `BaseDatasource` and implements:
@@ -140,6 +149,12 @@ Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_
 | `LIBRAM_SCHEDULER_MAX_TASKS_PER_DATASOURCE` | No | `4` |
 | `LIBRAM_SCHEDULER_POLL_INTERVAL_SECONDS` | No | `60` |
 | `LIBRAM_SCHEDULER_POLL_JITTER_SECONDS` | No | `30` |
+| `LIBRAM_SNAPSHOT_SCHEDULER_THREADS` | No | `2` |
+| `LIBRAM_SNAPSHOT_POLL_INTERVAL_SECONDS` | No | `10` |
+| `LIBRAM_SNAPSHOT_LEASE_SECONDS` | No | `300` |
+| `LIBRAM_SNAPSHOT_RETRY_DELAY_SECONDS` | No | `30` |
+| `LIBRAM_SNAPSHOT_MAX_BACKOFF_SECONDS` | No | `1800` |
+| `LIBRAM_SNAPSHOT_RPC_CONCURRENCY` | No | `2` |
 
 ## Project conventions
 

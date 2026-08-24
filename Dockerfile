@@ -25,7 +25,8 @@ RUN ln -s supervisord.conf /etc/supervisord.conf
 RUN uv sync
 
 # set permissions for mcp user
-RUN chown -R mcp:mcp /app && chmod +x entrypoint_server.sh && chmod +x entrypoint_scheduler.sh
+RUN chown -R mcp:mcp /app \
+    && chmod +x entrypoint_server.sh entrypoint_scheduler.sh entrypoint_snapshot_scheduler.sh
 
 # switch to non-root user
 USER mcp
