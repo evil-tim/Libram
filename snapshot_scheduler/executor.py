@@ -133,7 +133,7 @@ class SnapshotSchedulerExecutor:
         state = self.db.claim_due_snapshot(token, self.worker_id, self.lease_seconds)
         if state is None:
             return False
-        print(f"{datetime.now().isoformat()} : [{thread_ident}] Claimed snapshot job for entity {state.entity_id}")
+        print(f"{datetime.now().isoformat()} : [{thread_ident}] Claimed snapshot job for entity {state.entity_id}, due at {state.next_due_at}")
         started = self.clock()
         try:
             provider_key = self._provider_key(state.entity_id)
