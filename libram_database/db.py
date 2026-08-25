@@ -331,7 +331,7 @@ class Database:
         query = text("""UPDATE snapshot_state SET lease_token = NULL, lease_expires_at = NULL, worker_id = NULL,
             consecutive_failures = 0, last_succeeded_at = now(), last_observed_at = :observed_at,
             last_duration_ms = :duration_ms, last_error = NULL,
-            next_due_at = greatest((next_due_at + (interval_seconds * interval '1 second')), now()), updated_at = now()
+            next_due_at = now() + (interval_seconds * interval '1 second'), updated_at = now()
             WHERE entity_id = :entity_id AND lease_token = :lease_token""")
         with self.engine.begin() as conn:
             result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "observed_at": observed_at, "duration_ms": duration_ms})
