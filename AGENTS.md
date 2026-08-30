@@ -23,6 +23,9 @@ LIBRAM_DB="postgresql://user:***@localhost:5432/libram" \
 # Fetch a specific entity manually
 LIBRAM_DB="..." uv run cli_fetch.py --entity_code RCR --start 2025-01-01T00:00:00 --end 2025-02-01T00:00:00
 
+# Fetch a current snapshot observation (no date range needed); --dry_run skips writes
+LIBRAM_DB="..." uv run cli_fetch.py --entity_code WBTC --snapshot [--dry_run]
+
 # Generate scheduler tasks manually
 LIBRAM_DB="..." uv run cli_schedule.py [--entity_id UUID] [--min_date YYYY-MM-DDTHH:MM:SS]
 ```
