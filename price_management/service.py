@@ -40,7 +40,7 @@ class PriceManagerService:
     def __init__(self, db: Database):
         self.db = db
 
-    def fetch_and_store(self, entity_id: Optional[UUID], entity_code: Optional[str], start: datetime, end: datetime) -> int:
+    def fetch_and_store(self, entity_id: Optional[UUID], entity_code: Optional[str], start: datetime, end: datetime, dry_run: bool = False) -> int:
         entity = None
         # try to lookup entity by id first
         if entity_id:
@@ -107,13 +107,17 @@ class PriceManagerService:
                 continue
             cleaned_prices.append(price)
 
-        # save prices to database and return number of records inserted
-        print(f"{datetime.now().isoformat()} : Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
-        inserted = self.db.save_prices(db_entity_id, cleaned_prices)
-        return inserted
+        if dry_run:
+            print(f"{datetime.now().isoformat()} : Got the following prices for entity_id {db_entity_id} - {cleaned_prices}")
+            return 0
+        else:
+            # save prices to database and return number of records inserted
+            print(f"{datetime.now().isoformat()} : Inserting {len(cleaned_prices)} price records for entity_id {db_entity_id} and date range {start} to {end}")
+            inserted = self.db.save_prices(db_entity_id, cleaned_prices)
+            return inserted
 
     def fetch_snapshot_and_store(
-        self, entity_id: Optional[UUID], entity_code: Optional[str] = None
+        self, entity_id: Optional[UUID], entity_code: Optional[str] = None, dry_run: bool = False
     ) -> int:
         """Fetch and persist one current observation without historical checks."""
         entity = self._resolve_entity(entity_id, entity_code)
@@ -138,7 +142,11 @@ class PriceManagerService:
         # Persist a normalized UTC timestamp and reject OHLC-only records by
         # requiring the point-in-time fields above.
         snapshot.timestamp = timestamp
-        return self.db.save_prices(db_entity_id, [snapshot])
+        if dry_run:
+            print(f"{datetime.now().isoformat()} : Got the following price for entity_id {db_entity_id} - {snapshot}")
+            return 0
+        else:
+            return self.db.save_prices(db_entity_id, [snapshot])
 
     def _resolve_entity(
         self, entity_id: Optional[UUID], entity_code: Optional[str]
