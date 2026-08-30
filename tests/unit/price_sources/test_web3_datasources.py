@@ -10,9 +10,14 @@ from price_management.datasource import (
     BaseDatasource,
     UnsupportedDatasourceOperationError,
 )
+from price_sources.chainlink_datasource import ChainlinkDatasource
 from price_sources.uniswap_datasource import UniswapDataSource
+from price_sources.web3.chainlink import get_chainlink_price_feed_price
 from price_sources.web3.erc20_token import ERC20Token
-from price_sources.web3.uniswap import get_uniswap_swap_price
+from price_sources.web3.uniswap import (
+    get_uniswap_pool_v3_quoter_swap_price,
+    get_uniswap_pool_v3_quoter_v2_swap_price,
+)
 from price_sources.web3.web3 import get_cached_contract_abi
 from price_sources.web3_datasource import Web3DataSource
 
@@ -26,9 +31,7 @@ class _Provider:
 
 
 class _ConcreteWeb3DataSource(Web3DataSource):
-    def fetch_blockchain_price(
-        self, contract_address, from_token, to_token, pool_fee, web3
-    ):
+    def fetch_blockchain_price(self, contract_address, web3):
         return Decimal("12.5")
 
 
@@ -55,9 +58,7 @@ def test_web3_datasource_fetch_price_builds_snapshot(monkeypatch):
     datasource = _ConcreteWeb3DataSource(web3_config())
     web3 = SimpleNamespace(provider=_Provider())
     get_web3 = Mock(return_value=web3)
-    token_factory = Mock(side_effect=["source", "target"])
     monkeypatch.setattr("price_sources.web3_datasource.get_web3_instance", get_web3)
-    monkeypatch.setattr("price_sources.web3_datasource.ERC20Token", token_factory)
 
     result = datasource.fetch_price({"code": "TOKEN"})
 
@@ -66,25 +67,75 @@ def test_web3_datasource_fetch_price_builds_snapshot(monkeypatch):
     assert isinstance(result.timestamp, datetime)
     assert result.timestamp.tzinfo is UTC
     get_web3.assert_called_once_with("https://rpc.example.test", 3, 30, 5)
+
+
+def test_web3_datasource_passes_contract_address_and_web3(monkeypatch):
+    web3 = SimpleNamespace(provider=_Provider())
+    monkeypatch.setattr(
+        "price_sources.web3_datasource.get_web3_instance", Mock(return_value=web3)
+    )
+
+    received = {}
+
+    class _Recorder(Web3DataSource):
+        def fetch_blockchain_price(self, contract_address, web3):
+            received["contract_address"] = contract_address
+            received["web3"] = web3
+            return Decimal(1)
+
+    _Recorder(web3_config()).fetch_price({"code": "TOKEN"})
+
+    assert received["contract_address"] == POOL_ADDRESS
+    assert received["web3"] is web3
+
+
+def test_uniswap_datasource_fetch_price_delegates_to_quoter_v1(monkeypatch):
+    datasource = UniswapDataSource(web3_config())
+    web3 = SimpleNamespace(provider=_Provider())
+    monkeypatch.setattr(
+        "price_sources.web3_datasource.get_web3_instance", Mock(return_value=web3)
+    )
+    quote = Mock(return_value=Decimal("4.25"))
+    monkeypatch.setattr(
+        "price_sources.uniswap_datasource.get_uniswap_pool_v3_quoter_swap_price",
+        quote,
+    )
+    token_factory = Mock(side_effect=["source", "target"])
+    monkeypatch.setattr("price_sources.uniswap_datasource.ERC20Token", token_factory)
+
+    result = datasource.fetch_price({"code": "TOKEN"})
+
+    assert result.price == Decimal("4.25")
+    assert quote.call_args.kwargs == {
+        "contract_address": POOL_ADDRESS,
+        "from_token": "source",
+        "to_token": "target",
+        "pool_fee": 500,
+        "amount": Decimal("1.0"),
+        "web3": web3,
+    }
     assert token_factory.call_args_list == [
         ((TOKEN_ADDRESS, web3), {}),
         ((TARGET_ADDRESS, web3), {}),
     ]
 
 
-def test_uniswap_datasource_fetch_price_delegates_to_quote(monkeypatch):
-    datasource = UniswapDataSource(web3_config())
+def test_uniswap_datasource_fetch_price_delegates_to_quoter_v2(monkeypatch):
+    config = web3_config()
+    config["use_v2"] = True
+    datasource = UniswapDataSource(config)
     web3 = SimpleNamespace(provider=_Provider())
     monkeypatch.setattr(
         "price_sources.web3_datasource.get_web3_instance", Mock(return_value=web3)
     )
-    monkeypatch.setattr(
-        "price_sources.web3_datasource.ERC20Token",
-        Mock(side_effect=["source", "target"]),
-    )
     quote = Mock(return_value=Decimal("4.25"))
     monkeypatch.setattr(
-        "price_sources.uniswap_datasource.get_uniswap_swap_price", quote
+        "price_sources.uniswap_datasource.get_uniswap_pool_v3_quoter_v2_swap_price",
+        quote,
+    )
+    monkeypatch.setattr(
+        "price_sources.uniswap_datasource.ERC20Token",
+        Mock(side_effect=["source", "target"]),
     )
 
     result = datasource.fetch_price({"code": "TOKEN"})
@@ -98,6 +149,64 @@ def test_uniswap_datasource_fetch_price_delegates_to_quote(monkeypatch):
         "amount": Decimal("1.0"),
         "web3": web3,
     }
+
+
+def test_uniswap_datasource_defaults_to_quoter_v1(monkeypatch):
+    config = web3_config()
+    config.pop("pool_fee")
+    datasource = UniswapDataSource(config)
+    web3 = SimpleNamespace(provider=_Provider())
+    monkeypatch.setattr(
+        "price_sources.web3_datasource.get_web3_instance", Mock(return_value=web3)
+    )
+    quote_v1 = Mock(return_value=Decimal(1))
+    quote_v2 = Mock(return_value=Decimal(1))
+    monkeypatch.setattr(
+        "price_sources.uniswap_datasource.get_uniswap_pool_v3_quoter_swap_price",
+        quote_v1,
+    )
+    monkeypatch.setattr(
+        "price_sources.uniswap_datasource.get_uniswap_pool_v3_quoter_v2_swap_price",
+        quote_v2,
+    )
+    monkeypatch.setattr(
+        "price_sources.uniswap_datasource.ERC20Token",
+        Mock(side_effect=["source", "target"]),
+    )
+
+    datasource.fetch_price({"code": "TOKEN"})
+
+    assert datasource.pool_fee == 0
+    assert not datasource.use_v2
+    assert quote_v1.called
+    assert not quote_v2.called
+
+
+def test_uniswap_datasource_requires_token_configuration():
+    for missing_key in ("source_token_address", "target_token_address"):
+        config = web3_config()
+        config.pop(missing_key)
+
+        with pytest.raises(ValueError, match="config must include"):
+            UniswapDataSource(config)
+
+
+def test_chainlink_datasource_fetch_price_delegates_to_feed(monkeypatch):
+    datasource = ChainlinkDatasource(web3_config())
+    web3 = SimpleNamespace(provider=_Provider())
+    monkeypatch.setattr(
+        "price_sources.web3_datasource.get_web3_instance", Mock(return_value=web3)
+    )
+    feed = Mock(return_value=Decimal("43250.75"))
+    monkeypatch.setattr(
+        "price_sources.chainlink_datasource.get_chainlink_price_feed_price", feed
+    )
+
+    result = datasource.fetch_price({"code": "TOKEN"})
+
+    assert result.price == Decimal("43250.75")
+    assert result.timestamp.tzinfo is UTC
+    feed.assert_called_once_with(contract_address=POOL_ADDRESS, web3=web3)
 
 
 def test_erc20_token_loads_metadata(monkeypatch):
@@ -124,31 +233,78 @@ def test_erc20_token_loads_metadata(monkeypatch):
     )
 
 
-def test_uniswap_quote_converts_token_units_and_result(monkeypatch):
+def test_uniswap_quoter_v1_converts_token_units_and_result(monkeypatch):
     contract = Mock()
     contract.functions.quoteExactInputSingle.return_value.call.return_value = 2_500_000
-    monkeypatch.setattr(
-        "price_sources.web3.uniswap.get_cached_contract", Mock(return_value=contract)
-    )
+    get_contract = Mock(return_value=contract)
+    monkeypatch.setattr("price_sources.web3.uniswap.get_cached_contract", get_contract)
+    web3 = SimpleNamespace(provider=_Provider())
     from_token = SimpleNamespace(address=TOKEN_ADDRESS, decimals=6)
     to_token = SimpleNamespace(address=TARGET_ADDRESS, decimals=4)
 
-    result = get_uniswap_swap_price(
+    result = get_uniswap_pool_v3_quoter_swap_price(
         POOL_ADDRESS,
         from_token,
         to_token,
         500,
         Decimal("1.25"),
-        SimpleNamespace(provider=_Provider()),
+        web3,
     )
 
     assert result == Decimal(250)
     contract.functions.quoteExactInputSingle.assert_called_once_with(
         TOKEN_ADDRESS, TARGET_ADDRESS, 500, 1_250_000, 0
     )
+    get_contract.assert_called_once_with(
+        "https://rpc.example.test",
+        POOL_ADDRESS,
+        "Uniswap_v3_Quoter_ABI.json",
+        web3,
+    )
 
 
-def test_uniswap_quote_propagates_contract_errors(monkeypatch):
+def test_uniswap_quoter_v2_builds_params_and_converts_result(monkeypatch):
+    contract = Mock()
+    contract.functions.quoteExactInputSingle.return_value.call.return_value = (
+        2_500_000,
+        12345,
+        2,
+        60_000,
+    )
+    get_contract = Mock(return_value=contract)
+    monkeypatch.setattr("price_sources.web3.uniswap.get_cached_contract", get_contract)
+    web3 = SimpleNamespace(provider=_Provider())
+    from_token = SimpleNamespace(address=TOKEN_ADDRESS, decimals=6)
+    to_token = SimpleNamespace(address=TARGET_ADDRESS, decimals=4)
+
+    result = get_uniswap_pool_v3_quoter_v2_swap_price(
+        POOL_ADDRESS,
+        from_token,
+        to_token,
+        500,
+        Decimal("1.25"),
+        web3,
+    )
+
+    assert result == Decimal(250)
+    contract.functions.quoteExactInputSingle.assert_called_once_with(
+        {
+            "tokenIn": TOKEN_ADDRESS,
+            "tokenOut": TARGET_ADDRESS,
+            "amountIn": 1_250_000,
+            "fee": 500,
+            "sqrtPriceLimitX96": 0,
+        }
+    )
+    get_contract.assert_called_once_with(
+        "https://rpc.example.test",
+        POOL_ADDRESS,
+        "Uniswap_v3_Quoter_v2_ABI.json",
+        web3,
+    )
+
+
+def test_uniswap_quoter_v1_propagates_contract_errors(monkeypatch):
     contract = Mock()
     contract.functions.quoteExactInputSingle.return_value.call.side_effect = (
         RuntimeError("revert")
@@ -158,7 +314,7 @@ def test_uniswap_quote_propagates_contract_errors(monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="revert"):
-        get_uniswap_swap_price(
+        get_uniswap_pool_v3_quoter_swap_price(
             POOL_ADDRESS,
             SimpleNamespace(address=TOKEN_ADDRESS, decimals=0),
             SimpleNamespace(address=TARGET_ADDRESS, decimals=0),
@@ -168,12 +324,59 @@ def test_uniswap_quote_propagates_contract_errors(monkeypatch):
         )
 
 
+def test_chainlink_feed_scales_answer_by_decimals(monkeypatch):
+    contract = Mock()
+    contract.functions.latestRoundData.return_value.call.return_value = (
+        110_680,  # roundId
+        43_250_750_000,  # answer, 8 decimals
+        1_700_000_000,  # startedAt
+        1_700_000_100,  # updatedAt
+        110_680,  # answeredInRound
+    )
+    contract.functions.decimals.return_value.call.return_value = 8
+    get_contract = Mock(return_value=contract)
+    monkeypatch.setattr(
+        "price_sources.web3.chainlink.get_cached_contract", get_contract
+    )
+    web3 = SimpleNamespace(provider=_Provider())
+
+    result = get_chainlink_price_feed_price(POOL_ADDRESS, web3)
+
+    assert result == Decimal("432.5075")
+    get_contract.assert_called_once_with(
+        "https://rpc.example.test",
+        POOL_ADDRESS,
+        "Chainlink_Aggregator_Proxy_ABI.json",
+        web3,
+    )
+
+
+def test_chainlink_feed_propagates_contract_errors(monkeypatch):
+    contract = Mock()
+    contract.functions.latestRoundData.return_value.call.side_effect = RuntimeError(
+        "revert"
+    )
+    monkeypatch.setattr(
+        "price_sources.web3.chainlink.get_cached_contract", Mock(return_value=contract)
+    )
+
+    with pytest.raises(RuntimeError, match="revert"):
+        get_chainlink_price_feed_price(
+            POOL_ADDRESS, SimpleNamespace(provider=_Provider())
+        )
+
+
 def test_contract_abis_are_loadable():
     erc20_abi = get_cached_contract_abi("ERC20_ABI.json")
     quoter_abi = get_cached_contract_abi("Uniswap_v3_Quoter_ABI.json")
+    quoter_v2_abi = get_cached_contract_abi("Uniswap_v3_Quoter_v2_ABI.json")
+    chainlink_abi = get_cached_contract_abi("Chainlink_Aggregator_Proxy_ABI.json")
 
     assert any(item.get("name") == "name" for item in erc20_abi)
     assert any(item.get("name") == "quoteExactInputSingle" for item in quoter_abi)
+    assert any(item.get("name") == "quoteExactInputSingle" for item in quoter_v2_abi)
+    assert any(item.get("name") == "latestRoundData" for item in chainlink_abi)
+    assert any(item.get("name") == "decimals" for item in chainlink_abi)
 
 
 @pytest.mark.parametrize(
@@ -196,7 +399,7 @@ def test_web3_datasource_reads_integer_settings(
 
 @pytest.mark.parametrize(
     "missing_key",
-    ["rpc_url", "contract_address", "source_token_address", "target_token_address"],
+    ["rpc_url", "contract_address"],
 )
 def test_web3_datasource_requires_configuration(missing_key):
     config = web3_config()

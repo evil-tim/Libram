@@ -145,25 +145,41 @@ raises `UnsupportedDatasourceOperationError`. Historical task processing must ov
 
 Datasources are loaded dynamically from `datasource.implementation` (`module.path:ClassName`); entity configuration is merged over datasource configuration.
 
-Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_edge_datasource.py`, `coindesk_ohlc_datasource.py`, `ofx_forex_datasource.py`, `bpi_fund_datasource.py`, `manulife_fund_datasource.py`, `slamc_fund_datasource.py`, and `uniswap_datasource.py`.
+Current source modules include `rest_datasource.py`, `html_datasource.py`, `pse_edge_datasource.py`, `coindesk_ohlc_datasource.py`, `ofx_forex_datasource.py`, `bpi_fund_datasource.py`, `manulife_fund_datasource.py`, `slamc_fund_datasource.py`, `uniswap_datasource.py`, and `chainlink_datasource.py`.
 
-### Web3 and Uniswap sources
+### Web3, Uniswap, and Chainlink sources
 
 `price_sources/web3_datasource.py` provides `Web3DataSource`, the common
 snapshot-only base for blockchain sources. It requires these merged datasource
 configuration keys:
 
-- `rpc_url` — HTTP RPC endpoint;
-- `contract_address` — contract used to obtain the quote;
+- `rpc_url` — HTTP RPC endpoint; and
+- `contract_address` — contract used to obtain the quote.
+
+Subclasses validate their own additional keys in `__init__` and implement
+`fetch_blockchain_price(contract_address, web3) -> Decimal`, which receives the
+live Web3 client created by the base class.
+
+`UniswapDataSource` (`price_sources.uniswap_datasource:UniswapDataSource`)
+additionally requires:
+
 - `source_token_address` — ERC20 token being priced; and
 - `target_token_address` — ERC20 denomination token.
 
-`pool_fee` is optional and defaults to `0`; it identifies the Uniswap V3 pool fee
-when used by `UniswapDataSource`. The concrete implementation is registered as
-`price_sources.uniswap_datasource:UniswapDataSource`. It obtains ERC20 name,
-symbol, and decimals through `price_sources/web3/erc20_token.py`, then calls the
-Uniswap V3 quoter through `price_sources/web3/uniswap.py`. ABI files live beside
-those helpers in `price_sources/web3/`.
+`pool_fee` is optional and defaults to `0`; it identifies the Uniswap V3 pool
+fee. `use_v2` is optional and defaults to `false`; when set, quotes are obtained
+from the Uniswap V3 QuoterV2 contract instead of the original Quoter. It obtains
+ERC20 name, symbol, and decimals through `price_sources/web3/erc20_token.py`,
+then calls the Uniswap V3 quoter through `price_sources/web3/uniswap.py`
+(`get_uniswap_pool_v3_quoter_swap_price` or
+`get_uniswap_pool_v3_quoter_v2_swap_price`).
+
+`ChainlinkDatasource` (`price_sources.chainlink_datasource:ChainlinkDatasource`)
+reads the latest round from a Chainlink aggregator proxy through
+`price_sources/web3/chainlink.py` and scales the answer by the feed's on-chain
+`decimals()`. It requires only the base `rpc_url` and `contract_address` keys.
+
+ABI files live beside those helpers in `price_sources/web3/`.
 
 Web3 clients and contract/token metadata use bounded in-process caches. Contract
 and token caches are keyed by the identity of the live Web3 client, not merely by
@@ -237,7 +253,7 @@ uv run ruff format --check tests/unit
 - `tests/unit/price_management/` covers datasource loading and price fetch/store orchestration.
 - `tests/unit/price_scheduler/` covers missing-range generation and executor behavior without sleeping or live services.
 - `tests/unit/portfolio_management/` covers portfolio, order, totals, dividend, and fee behavior.
-- `tests/unit/price_sources/test_web3_datasources.py` covers Web3/Uniswap snapshot construction, token-unit conversion, ABI loading, and Web3 configuration validation.
+- `tests/unit/price_sources/test_web3_datasources.py` covers Web3/Uniswap/Chainlink snapshot construction, token-unit conversion, ABI loading, and Web3 configuration validation.
 - `tests/unit/price_sources/test_web3_helpers.py` covers Ethereum address normalization and Web3/contract cache behavior without live RPC calls.
 - Keep tests outside production packages and mirror the production concern they exercise.
 - Test behavior rather than implementation details. Use real domain logic where practical; mock only external boundaries such as HTTP, database, and scheduler I/O.
@@ -324,7 +340,8 @@ For a feature spanning multiple concerns, split parsing, computation, and orches
 | `price_sources/` | Datasource implementations |
 | `price_sources/web3_datasource.py` | Common Web3 snapshot datasource |
 | `price_sources/uniswap_datasource.py` | Uniswap V3 datasource adapter |
-| `price_sources/web3/` | Web3 client/cache helpers, ERC20 support, Uniswap quote helper, and ABI JSON files |
+| `price_sources/chainlink_datasource.py` | Chainlink price feed datasource adapter |
+| `price_sources/web3/` | Web3 client/cache helpers, ERC20 support, Uniswap and Chainlink quote helpers, and ABI JSON files |
 | `libram_database/db.py` | Database layer and SQLAlchemy helpers |
 | `libram_types/` | Core dataclasses |
 | `schema.sql` | Database DDL |
