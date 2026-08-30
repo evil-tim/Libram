@@ -51,9 +51,6 @@ class Web3DataSource(BaseDatasource):
         if not self.config.get("rpc_url"):
             raise ValueError("config must include 'rpc_url'")
         self.rpc_url: str = cast(str, self.config.get("rpc_url"))
-        if not self.config.get("contract_address"):
-            raise ValueError("config must include 'contract_address'")
-        self.contract_address: str = cast(str, self.config.get("contract_address"))
 
         self.retries = _read_optional_int_env("LIBRAM_WEB3_RETRIES")
         self.timeout = _read_optional_int_env("LIBRAM_WEB3_TIMEOUT")
@@ -72,7 +69,6 @@ class Web3DataSource(BaseDatasource):
         )
 
         price = self.fetch_blockchain_price(
-            contract_address=self.contract_address,
             web3=web3,
         )
 
@@ -84,7 +80,6 @@ class Web3DataSource(BaseDatasource):
     @abstractmethod
     def fetch_blockchain_price(
         self,
-        contract_address: str,
         web3: Web3,
     ) -> Decimal:
         """Fetch the price of a token from the blockchain or indexer.

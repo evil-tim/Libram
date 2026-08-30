@@ -22,6 +22,11 @@ class UniswapDataSource(Web3DataSource):
 
     def __init__(self, config: dict):
         super().__init__(config)
+
+        if not self.config.get("contract_address"):
+            raise ValueError("config must include 'contract_address'")
+        self.contract_address: str = cast(str, self.config.get("contract_address"))
+
         self.use_v2 = bool(self.config.get("use_v2"))
 
         if not self.config.get("source_token_address"):
@@ -29,16 +34,17 @@ class UniswapDataSource(Web3DataSource):
         self.source_token_address: str = cast(
             str, self.config.get("source_token_address")
         )
+
         if not self.config.get("target_token_address"):
             raise ValueError("config must include 'target_token_address'")
         self.target_token_address: str = cast(
             str, self.config.get("target_token_address")
         )
+
         self.pool_fee: int = int(self.config.get("pool_fee", 0))
 
     def fetch_blockchain_price(
         self,
-        contract_address: str,
         web3: Web3,
     ) -> Decimal:
         """Fetch the price of a token from Uniswap using the provided Web3 instance.
@@ -50,7 +56,7 @@ class UniswapDataSource(Web3DataSource):
 
         if self.use_v2:
             return get_uniswap_pool_v3_quoter_v2_swap_price(
-                contract_address=contract_address,
+                contract_address=self.contract_address,
                 from_token=from_token,
                 to_token=to_token,
                 pool_fee=self.pool_fee,
@@ -59,7 +65,7 @@ class UniswapDataSource(Web3DataSource):
             )
         else:
             return get_uniswap_pool_v3_quoter_swap_price(
-                contract_address=contract_address,
+                contract_address=self.contract_address,
                 from_token=from_token,
                 to_token=to_token,
                 pool_fee=self.pool_fee,

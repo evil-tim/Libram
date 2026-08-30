@@ -31,7 +31,7 @@ class _Provider:
 
 
 class _ConcreteWeb3DataSource(Web3DataSource):
-    def fetch_blockchain_price(self, contract_address, web3):
+    def fetch_blockchain_price(self, web3):
         return Decimal("12.5")
 
 
@@ -78,14 +78,12 @@ def test_web3_datasource_passes_contract_address_and_web3(monkeypatch):
     received = {}
 
     class _Recorder(Web3DataSource):
-        def fetch_blockchain_price(self, contract_address, web3):
-            received["contract_address"] = contract_address
+        def fetch_blockchain_price(self, web3):
             received["web3"] = web3
             return Decimal(1)
 
     _Recorder(web3_config()).fetch_price({"code": "TOKEN"})
 
-    assert received["contract_address"] == POOL_ADDRESS
     assert received["web3"] is web3
 
 
@@ -397,16 +395,24 @@ def test_web3_datasource_reads_integer_settings(
     assert getattr(datasource, attribute) == expected
 
 
-@pytest.mark.parametrize(
-    "missing_key",
-    ["rpc_url", "contract_address"],
-)
-def test_web3_datasource_requires_configuration(missing_key):
+def test_web3_datasource_requires_configuration():
     config = web3_config()
-    config.pop(missing_key)
+    config.pop("rpc_url")
 
     with pytest.raises(ValueError, match="config must include"):
         _ConcreteWeb3DataSource(config)
+
+
+def test_web3_subclasses_require_contract_address():
+    # contract_address is subclass-specific: Uniswap has a single quoter per
+    # chain, but Chainlink feeds have no common contract, so the base class
+    # does not require it.
+    for datasource_cls in (UniswapDataSource, ChainlinkDataSource):
+        config = web3_config()
+        config.pop("contract_address")
+
+        with pytest.raises(ValueError, match="config must include"):
+            datasource_cls(config)
 
 
 def test_web3_datasource_rejects_invalid_integer_setting(monkeypatch):
