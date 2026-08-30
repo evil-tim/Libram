@@ -28,7 +28,6 @@ from web3 import Web3
 
 from libram_types.libram_types import PriceRecord
 from price_management import BaseDatasource
-from price_sources.web3.erc20_token import ERC20Token
 from price_sources.web3.web3 import get_web3_instance
 
 
@@ -47,23 +46,15 @@ class Web3DataSource(BaseDatasource):
 
     def __init__(self, config: dict):
         super().__init__(config)
+
+        # Specific config keys for the Web3 datasource
         if not self.config.get("rpc_url"):
             raise ValueError("config must include 'rpc_url'")
         self.rpc_url: str = cast(str, self.config.get("rpc_url"))
         if not self.config.get("contract_address"):
             raise ValueError("config must include 'contract_address'")
         self.contract_address: str = cast(str, self.config.get("contract_address"))
-        if not self.config.get("source_token_address"):
-            raise ValueError("config must include 'source_token_address'")
-        self.source_token_address: str = cast(
-            str, self.config.get("source_token_address")
-        )
-        if not self.config.get("target_token_address"):
-            raise ValueError("config must include 'target_token_address'")
-        self.target_token_address: str = cast(
-            str, self.config.get("target_token_address")
-        )
-        self.pool_fee: int = int(self.config.get("pool_fee", 0))
+
         self.retries = _read_optional_int_env("LIBRAM_WEB3_RETRIES")
         self.timeout = _read_optional_int_env("LIBRAM_WEB3_TIMEOUT")
         self.backoff = _read_optional_int_env("LIBRAM_WEB3_BACKOFF")
@@ -79,14 +70,9 @@ class Web3DataSource(BaseDatasource):
             self.timeout if self.timeout is not None else 30,
             self.backoff if self.backoff is not None else 5,
         )
-        source_token = ERC20Token(self.source_token_address, web3)
-        target_token = ERC20Token(self.target_token_address, web3)
 
         price = self.fetch_blockchain_price(
             contract_address=self.contract_address,
-            from_token=source_token,
-            to_token=target_token,
-            pool_fee=self.pool_fee,
             web3=web3,
         )
 
@@ -99,9 +85,6 @@ class Web3DataSource(BaseDatasource):
     def fetch_blockchain_price(
         self,
         contract_address: str,
-        from_token: ERC20Token,
-        to_token: ERC20Token,
-        pool_fee: int,
         web3: Web3,
     ) -> Decimal:
         """Fetch the price of a token from the blockchain or indexer.

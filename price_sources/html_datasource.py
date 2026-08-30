@@ -30,16 +30,15 @@ class HTMLDatasource(BaseDatasource):
     """
 
     def __init__(self, config: dict):
-        # The combined datasource/entity config is passed in as `config`.
-        self.config = config or {}
+        super().__init__(config)
 
         # Specific config keys for the REST datasource
-        self.url = str(config.get("url"))
+        self.url = str(self.config.get("url"))
         if not self.url:
             raise ValueError("config must include 'url'")
-        self.method = (config.get("method") or "GET").upper()
-        self.headers: dict[str, str] = config.get("headers") or {}
-        self.timeout: int = config.get("timeout", 10)
+        self.method = (self.config.get("method") or "GET").upper()
+        self.headers: dict[str, str] = self.config.get("headers") or {}
+        self.timeout: int = self.config.get("timeout", 10)
 
     def fetch(
         self,
