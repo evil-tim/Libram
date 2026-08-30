@@ -29,4 +29,4 @@ def get_chainlink_price_feed_price(
         _answeredInRound,
     ) = contract.functions.latestRoundData().call()
     decimals = contract.functions.decimals().call()
-    return answer / Decimal(10**decimals)
+    return Decimal(answer) / Decimal(10**decimals)

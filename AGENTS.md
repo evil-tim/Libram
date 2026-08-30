@@ -177,7 +177,7 @@ then calls the Uniswap V3 quoter through `price_sources/web3/uniswap.py`
 (`get_uniswap_pool_v3_quoter_swap_price` or
 `get_uniswap_pool_v3_quoter_v2_swap_price`).
 
-`ChainlinkDatasource` (`price_sources.chainlink_datasource:ChainlinkDatasource`)
+`ChainlinkDataSource` (`price_sources.chainlink_datasource:ChainlinkDataSource`)
 reads the latest round from a Chainlink aggregator proxy through
 `price_sources/web3/chainlink.py` and scales the answer by the feed's on-chain
 `decimals()`. It requires only the base `rpc_url` and `contract_address` keys.

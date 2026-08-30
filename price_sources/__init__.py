@@ -5,6 +5,7 @@ modules (e.g. configuration or registry code) without importing individual files
 """
 
 from .bpi_fund_datasource import BPIFundDataSource
+from .chainlink_datasource import ChainlinkDataSource
 from .coindesk_ohlc_datasource import CoindeskOHLCDataSource
 from .html_datasource import HTMLDatasource
 from .manulife_fund_datasource import ManulifeFundDataSource
@@ -16,6 +17,7 @@ from .uniswap_datasource import UniswapDataSource
 
 __all__ = [
 	"BPIFundDataSource",
+    "ChainlinkDataSource",
 	"CoindeskOHLCDataSource",
 	"HTMLDatasource",
 	"ManulifeFundDataSource",

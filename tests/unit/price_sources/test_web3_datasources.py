@@ -10,7 +10,7 @@ from price_management.datasource import (
     BaseDatasource,
     UnsupportedDatasourceOperationError,
 )
-from price_sources.chainlink_datasource import ChainlinkDatasource
+from price_sources.chainlink_datasource import ChainlinkDataSource
 from price_sources.uniswap_datasource import UniswapDataSource
 from price_sources.web3.chainlink import get_chainlink_price_feed_price
 from price_sources.web3.erc20_token import ERC20Token
@@ -192,7 +192,7 @@ def test_uniswap_datasource_requires_token_configuration():
 
 
 def test_chainlink_datasource_fetch_price_delegates_to_feed(monkeypatch):
-    datasource = ChainlinkDatasource(web3_config())
+    datasource = ChainlinkDataSource(web3_config())
     web3 = SimpleNamespace(provider=_Provider())
     monkeypatch.setattr(
         "price_sources.web3_datasource.get_web3_instance", Mock(return_value=web3)

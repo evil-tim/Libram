@@ -13,7 +13,7 @@ from price_sources.web3.chainlink import get_chainlink_price_feed_price
 from price_sources.web3_datasource import Web3DataSource
 
 
-class ChainlinkDatasource(Web3DataSource):
+class ChainlinkDataSource(Web3DataSource):
     def fetch_blockchain_price(
         self,
         contract_address: str,
