@@ -8,6 +8,7 @@ from .bpi_fund_datasource import BPIFundDataSource
 from .chainlink_datasource import ChainlinkDataSource
 from .coindesk_ohlc_datasource import CoindeskOHLCDataSource
 from .html_datasource import HTMLDatasource
+from .kraken_ticker_datasource import KrakenTickerDataSource
 from .manulife_fund_datasource import ManulifeFundDataSource
 from .ofx_forex_datasource import OFXForexDataSource
 from .pse_edge_datasource import PSEEdgeDataSource
@@ -20,6 +21,7 @@ __all__ = [
     "ChainlinkDataSource",
 	"CoindeskOHLCDataSource",
 	"HTMLDatasource",
+	"KrakenTickerDataSource",
 	"ManulifeFundDataSource",
 	"OFXForexDataSource",
 	"PSEEdgeDataSource",
