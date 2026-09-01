@@ -6,7 +6,7 @@ The instance is initialized with a config dict. Expected config keys:
 - "headers": dict of headers (default: {})
 - "timeout": request timeout seconds (default: 10)
 """
-from abc import abstractmethod
+
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Optional, Union
@@ -15,6 +15,7 @@ import requests
 
 from libram_types.libram_types import PriceRecord
 from price_management import BaseDatasource
+from price_management.datasource import UnsupportedDatasourceOperationError
 
 
 class RestJSONDatasource(BaseDatasource):
@@ -75,7 +76,6 @@ class RestJSONDatasource(BaseDatasource):
         except ValueError as exc:
             raise ValueError("Response did not contain valid JSON") from exc
 
-    @abstractmethod
     def build_request_params(
         self,
         entity: dict,
@@ -85,14 +85,48 @@ class RestJSONDatasource(BaseDatasource):
     ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         """Build the url, query parameters and request body params for the request based on the entity and time range
         as well as the current instance's config.
-        """
-        raise NotImplementedError()
 
-    @abstractmethod
-    def parse_price_data(self, data: Union[dict[str, Any], list]) -> Iterable[PriceRecord]:
-        """Parse the raw JSON data returned by `fetch` into an iterable of `PriceRecord`.
+        Subclasses should override this method to construct the request parameters for the specific REST API being used.
         """
-        raise NotImplementedError()
+        raise UnsupportedDatasourceOperationError(
+            "This datasource does not support historical price fetching."
+        )
+
+    def parse_price_data(
+        self, data: Union[dict[str, Any], list]
+    ) -> Iterable[PriceRecord]:
+        """Parse the raw JSON data returned by `fetch` into an iterable of `PriceRecord`.
+
+        Subclasses should override this method to extract historical prices from the JSON response.
+        """
+        raise UnsupportedDatasourceOperationError(
+            "This datasource does not support historical price fetching."
+        )
+
+    def build_request_params_snapshot(
+        self,
+        entity: dict,
+        config: dict,
+    ) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+        """Build the url, query parameters and request body params for the request based on the entity
+        as well as the current instance's config.
+
+        Subclasses should override this method to construct the request parameters for the specific REST API being used.
+        """
+        raise UnsupportedDatasourceOperationError(
+            "This datasource does not support snapshot price fetching."
+        )
+
+    def parse_price_data_snapshot(
+        self, data: Union[dict[str, Any], list]
+    ) -> PriceRecord:
+        """Parse the raw JSON data returned by `fetch` into a single `PriceRecord`.
+
+        Subclasses should override this method to extract the current price from the JSON response.
+        """
+        raise UnsupportedDatasourceOperationError(
+            "This datasource does not support snapshot price fetching."
+        )
 
     def build_headers(
         self,
@@ -107,22 +141,36 @@ class RestJSONDatasource(BaseDatasource):
         """
         return base_headers
 
-    def fetch_prices(self, entity: dict, start: datetime, end: datetime) -> Iterable[PriceRecord]:
+    def fetch_prices(
+        self, entity: dict, start: datetime, end: datetime
+    ) -> Iterable[PriceRecord]:
         url, request_params, request_body = self.build_request_params(
-            entity=entity,
-            start=start,
-            end=end,
-            config=self.config)
+            entity=entity, start=start, end=end, config=self.config
+        )
 
-        headers = self.build_headers(
-            self.headers,
-            entity=entity,
-            config=self.config)
+        headers = self.build_headers(self.headers, entity=entity, config=self.config)
 
         data = self.fetch(
             url=url,
             headers=headers,
             request_params=request_params,
-            request_body=request_body)
+            request_body=request_body,
+        )
 
         return self.parse_price_data(data)
+
+    def fetch_price(self, entity: dict) -> PriceRecord:
+        url, request_params, request_body = self.build_request_params_snapshot(
+            entity=entity, config=self.config
+        )
+
+        headers = self.build_headers(self.headers, entity=entity, config=self.config)
+
+        data = self.fetch(
+            url=url,
+            headers=headers,
+            request_params=request_params,
+            request_body=request_body,
+        )
+
+        return self.parse_price_data_snapshot(data)
