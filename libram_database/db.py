@@ -12,6 +12,9 @@ from sqlalchemy.engine import Engine
 from libram_types.libram_types import (
     DailyPrice,
     DividendEventRecord,
+    EntityGroupMemberDetail,
+    EntityGroupMemberRecord,
+    EntityGroupRecord,
     EntityRecord,
     PortfolioDividendRecord,
     PortfolioOrderRecord,
@@ -1240,3 +1243,186 @@ class Database:
             if not row or row[0] is None:
                 return None
             return row[0]
+
+    # ------------------------------------------------------------------
+    # entity group methods
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _row_to_entity_group(row) -> EntityGroupRecord:
+        group_id = row.get("id")
+        if not group_id or not isinstance(group_id, UUID):
+            raise RuntimeError("entity group id is not a UUID")
+        return EntityGroupRecord(
+            id=group_id,
+            code=row.get("code"),
+            name=row.get("name"),
+            description=row.get("description"),
+            quote_currency_id=row.get("quote_currency_id"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+
+    @staticmethod
+    def _row_to_entity_group_member(row) -> EntityGroupMemberRecord:
+        group_id = row.get("group_id")
+        entity_id = row.get("entity_id")
+        if not group_id or not isinstance(group_id, UUID):
+            raise RuntimeError("entity group member group_id is not a UUID")
+        if not entity_id or not isinstance(entity_id, UUID):
+            raise RuntimeError("entity group member entity_id is not a UUID")
+        return EntityGroupMemberRecord(
+            group_id=group_id,
+            entity_id=entity_id,
+            strength=row.get("strength"),
+            created_at=row.get("created_at"),
+        )
+
+    @staticmethod
+    def _row_to_entity_group_member_detail(row) -> EntityGroupMemberDetail:
+        entity_id = row.get("entity_id")
+        if not entity_id or not isinstance(entity_id, UUID):
+            raise RuntimeError("entity group member entity_id is not a UUID")
+        return EntityGroupMemberDetail(
+            entity_id=entity_id,
+            entity_code=row.get("entity_code"),
+            datasource=row.get("datasource"),
+            strength=row.get("strength"),
+            created_at=row.get("created_at"),
+        )
+
+    def create_entity_group(
+        self,
+        code: str,
+        name: str,
+        description: str | None = None,
+        quote_currency_id: UUID | None = None,
+    ) -> EntityGroupRecord:
+        """Insert a group row and return the record.
+
+        A duplicate code surfaces as a unique violation; callers check
+        ``get_entity_group_by_code()`` first and report a conflict.
+        """
+        q = text(
+            """
+            INSERT INTO entity_group (code, name, description, quote_currency_id)
+            VALUES (:code, :name, :description, :quote_currency_id)
+            RETURNING *
+            """
+        )
+        params = {
+            "code": code,
+            "name": name,
+            "description": description,
+            "quote_currency_id": str(quote_currency_id) if quote_currency_id else None,
+        }
+        with self.engine.begin() as conn:
+            row = conn.execute(q, params).mappings().first()
+            if not row:
+                raise RuntimeError("failed to create entity group")
+        return self._row_to_entity_group(row)
+
+    def list_entity_groups(self) -> list[EntityGroupRecord]:
+        """Return all groups ordered by code ascending."""
+        q = text("SELECT * FROM entity_group ORDER BY code ASC")
+        with self.engine.connect() as conn:
+            rows = conn.execute(q).mappings().all()
+        return [self._row_to_entity_group(r) for r in rows]
+
+    def get_entity_group_by_code(self, code: str) -> EntityGroupRecord | None:
+        """Lookup a group by its code, which is unique."""
+        q = text("SELECT * FROM entity_group WHERE code = :code")
+        with self.engine.connect() as conn:
+            row = conn.execute(q, {"code": code}).mappings().first()
+        return self._row_to_entity_group(row) if row else None
+
+    def update_entity_group(self, group_id: UUID, **values) -> EntityGroupRecord | None:
+        """Update only the fields present in ``values``; returns None if the group is gone.
+
+        An omitted field is left alone while an explicit ``None`` clears it, so
+        ``quote_currency_id=None`` means PHP rather than "unchanged".
+        """
+        values = {
+            key: value
+            for key, value in values.items()
+            if key in {"name", "description", "quote_currency_id"}
+        }
+        if not values:
+            raise ValueError("update_entity_group requires at least one updatable field")
+        params = {key: (str(value) if isinstance(value, UUID) else value) for key, value in values.items()}
+        params["id"] = str(group_id)
+        q = text(
+            f"""
+            UPDATE entity_group
+            SET {", ".join(f"{key} = :{key}" for key in values)}, updated_at = now()
+            WHERE id = :id
+            RETURNING *
+            """
+        )
+        with self.engine.begin() as conn:
+            row = conn.execute(q, params).mappings().first()
+        return self._row_to_entity_group(row) if row else None
+
+    def delete_entity_group(self, group_id: UUID) -> bool:
+        """Delete a group and cascade-delete its members. Returns True if a row was deleted."""
+        q = text("DELETE FROM entity_group WHERE id = :id")
+        with self.engine.begin() as conn:
+            return conn.execute(q, {"id": str(group_id)}).rowcount > 0
+
+    def upsert_entity_group_member(
+        self, group_id: UUID, entity_id: UUID, strength: str
+    ) -> EntityGroupMemberRecord:
+        """Insert or restate one membership.
+
+        Idempotent: the primary key is ``(group_id, entity_id)``, so writing the
+        same membership twice leaves one row with the latest strength.
+        """
+        q = text(
+            """
+            INSERT INTO entity_group_member (group_id, entity_id, strength)
+            VALUES (:group_id, :entity_id, :strength)
+            ON CONFLICT (group_id, entity_id)
+            DO UPDATE SET strength = EXCLUDED.strength
+            RETURNING *
+            """
+        )
+        params = {"group_id": str(group_id), "entity_id": str(entity_id), "strength": strength}
+        with self.engine.begin() as conn:
+            row = conn.execute(q, params).mappings().first()
+            if not row:
+                raise RuntimeError("failed to upsert entity group member")
+        return self._row_to_entity_group_member(row)
+
+    def delete_entity_group_member(self, group_id: UUID, entity_id: UUID) -> bool:
+        """Remove one membership. Returns True if a row was deleted."""
+        q = text(
+            "DELETE FROM entity_group_member WHERE group_id = :group_id AND entity_id = :entity_id"
+        )
+        with self.engine.begin() as conn:
+            return (
+                conn.execute(
+                    q, {"group_id": str(group_id), "entity_id": str(entity_id)}
+                ).rowcount
+                > 0
+            )
+
+    def list_entity_group_members(self, group_id: UUID) -> list[EntityGroupMemberDetail]:
+        """Return a group's members joined to their entity and datasource.
+
+        Ordered by entity code then datasource, which is the order fused responses
+        report contributors in. The entity code is only unique per datasource, so
+        the join is what makes a member self-describing.
+        """
+        q = text(
+            """
+            SELECT m.entity_id, e.code AS entity_code, d.name AS datasource,
+                   m.strength, m.created_at
+            FROM entity_group_member m
+            JOIN entity e ON e.id = m.entity_id
+            JOIN datasource d ON d.id = e.datasource_id
+            WHERE m.group_id = :group_id
+            ORDER BY e.code ASC, d.name ASC
+            """
+        )
+        with self.engine.connect() as conn:
+            rows = conn.execute(q, {"group_id": str(group_id)}).mappings().all()
+        return [self._row_to_entity_group_member_detail(r) for r in rows]
