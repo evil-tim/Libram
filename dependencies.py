@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import Depends
 
+from currency_conversion.service import CurrencyConversionService
 from fundamentals_management.service import FundamentalsManagerService
 from libram_database.db import Database
 from portfolio_management.service import PortfolioManagerService
@@ -26,6 +27,12 @@ async def get_price_manager_service(
     db: Database = Depends(get_database),
 ) -> PriceManagerService:
     return PriceManagerService(db)
+
+
+async def get_currency_conversion_service(
+    db: Database = Depends(get_database),
+) -> CurrencyConversionService:
+    return CurrencyConversionService(db)
 
 
 async def get_fundamentals_manager_service(

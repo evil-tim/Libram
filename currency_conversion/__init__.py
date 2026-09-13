@@ -14,16 +14,21 @@ from .conversion import (
     NoRate,
     convert,
     resolve_path,
+    to_decimal,
 )
+from .service import PHP, CurrencyConversionService
 
 __all__ = [
     "CONVERTED_QUANTUM",
     "DIRECT",
     "INVERSE",
+    "PHP",
     "CurrencyConversionError",
+    "CurrencyConversionService",
     "InvalidRate",
     "NoPath",
     "NoRate",
     "convert",
     "resolve_path",
+    "to_decimal",
 ]
