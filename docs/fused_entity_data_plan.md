@@ -309,6 +309,8 @@ GET    /api/v1/entity-groups/{group_code}/prices
 
 Group bodies are `{code, name, description, quote_currency_id}`; `quote_currency_id` is optional and `null` means PHP. `PATCH` accepts `name`, `description`, and `quote_currency_id`. The member `PUT` body is `{"strength": "strong" | "weak"}` and is a full, idempotent upsert.
 
+CRUD responses add the server-owned fields: a group returns `{id, code, name, description, quote_currency_id, created_at, updated_at}` and a member returns `{entity_id, entity_code, datasource, strength, created_at}`. The output currency is reported as `quote_currency_id` alone — a `currency` label would need the currency module, which Phase 1 deliberately does not depend on; the fused response adds the code in Phase 2.
+
 Changing a group's `quote_currency_id` invalidates nothing on write — members are validated against it when a fused series is requested (Decision 8).
 
 `/prices` parameters:
@@ -325,6 +327,7 @@ Fused queries stay separate from `/api/v1/prices?entity_id=...`: an entity produ
 |---|---|---|
 | Unknown group code | 404 | `{"error": "group_not_found", "group": "<code>"}` |
 | Unknown entity id (`quote_currency_id` or member write) | 404 | `{"error": "entity_not_found", "entity_id": "<uuid>"}` |
+| Removing an entity that is not a member | 404 | `{"error": "member_not_found", "group": "<code>", "entity_id": "<uuid>"}` |
 | Duplicate group code | 409 | `{"error": "group_code_exists", "group": "<code>"}` |
 | A selected member has no single-hop conversion path | 422 | `{"error": "fx_no_path", "entity_code": "...", "datasource": "...", "from": "USDC", "to": "USD"}` |
 | A selected member's rate is missing or `<= 0` for a requested day | 422 | `{"error": "fx_rate_unavailable", "entity_code": "...", "datasource": "...", "pair": "USD", "date": "YYYY-MM-DD"}` |
