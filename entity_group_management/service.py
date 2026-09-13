@@ -44,16 +44,23 @@ class EntityGroupService:
         code = body.code.strip()
         if not code:
             raise EntityGroupValidationError("code", body.code, "must not be blank")
+        name = body.name.strip()
+        if not name:
+            raise EntityGroupValidationError("name", body.name, "must not be blank")
         if self.db.get_entity_group_by_code(code) is not None:
             raise EntityGroupCodeExists(code)
         if body.quote_currency_id is not None:
             self._require_entity(body.quote_currency_id)
         record = self.db.create_entity_group(
             code=code,
-            name=body.name,
+            name=name,
             description=body.description,
             quote_currency_id=body.quote_currency_id,
         )
+        if record is None:
+            # A concurrent create took the code between the check above and the
+            # insert; the database reports it as a taken code rather than raising.
+            raise EntityGroupCodeExists(code)
         return self._group_response(record)
 
     def list_groups(self) -> list[dict]:
@@ -65,6 +72,15 @@ class EntityGroupService:
     def update_group(self, code: str, body: UpdateEntityGroupRequest) -> dict:
         record = self._require_group(code)
         fields = body.model_dump(exclude_unset=True)
+        if "name" in fields:
+            # name is NOT NULL, so an explicit null is a client error rather than
+            # a way to clear the field, and a blank name is no more useful than a
+            # blank code.
+            if fields["name"] is None:
+                raise EntityGroupValidationError("name", None, "must not be null")
+            fields["name"] = fields["name"].strip()
+            if not fields["name"]:
+                raise EntityGroupValidationError("name", body.name, "must not be blank")
         # An explicit null means "back to PHP", which needs no entity to exist;
         # a value must name one.
         if fields.get("quote_currency_id") is not None:
@@ -105,7 +121,10 @@ class EntityGroupService:
         self._require_entity(entity_id)
         self.db.upsert_entity_group_member(record.id, entity_id, body.strength)
         # Re-read rather than echo the input, so the response carries the entity
-        # code and datasource the membership now resolves to.
+        # code and datasource the membership now resolves to. This reads the whole
+        # listing rather than adding a one-member query: a group has a handful of
+        # members, and reusing the same read guarantees the response matches what
+        # the listing will show.
         for detail in self.db.list_entity_group_members(record.id):
             if detail.entity_id == entity_id:
                 return self._member_response(detail)

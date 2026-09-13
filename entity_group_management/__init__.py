@@ -1,7 +1,6 @@
 """Entity group management package exports."""
 
 from .models import (
-    VALID_MEMBERSHIP_MODES,
     VALID_STRENGTHS,
     CreateEntityGroupRequest,
     EntityGroupCodeExists,
@@ -15,7 +14,6 @@ from .models import (
 )
 
 __all__ = [
-    "VALID_MEMBERSHIP_MODES",
     "VALID_STRENGTHS",
     "CreateEntityGroupRequest",
     "EntityGroupCodeExists",

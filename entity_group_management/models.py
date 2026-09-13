@@ -15,10 +15,6 @@ from pydantic import BaseModel, Field
 #: derivative or wrapped representation of it.
 VALID_STRENGTHS = ("strong", "weak")
 
-#: Membership selection modes for a fused read. Declared here because the
-#: endpoints that accept it are part of this feature's surface.
-VALID_MEMBERSHIP_MODES = ("strong", "all")
-
 
 class EntityGroupError(Exception):
     """Base class for every expected failure on this feature's endpoints."""
@@ -106,7 +102,11 @@ class CreateEntityGroupRequest(BaseModel):
 
 
 class UpdateEntityGroupRequest(BaseModel):
-    """Partial update: an omitted field is left unchanged, an explicit null clears it."""
+    """Partial update: an omitted field is left unchanged, an explicit null clears it.
+
+    ``name`` is the exception: its column is NOT NULL, so an explicit null is a
+    client error the service rejects rather than a way to clear the field.
+    """
 
     name: str | None = Field(None, description="Display name for the group")
     description: str | None = Field(
@@ -126,7 +126,6 @@ class EntityGroupMemberRequest(BaseModel):
 
 
 __all__ = [
-    "VALID_MEMBERSHIP_MODES",
     "VALID_STRENGTHS",
     "CreateEntityGroupRequest",
     "EntityGroupCodeExists",

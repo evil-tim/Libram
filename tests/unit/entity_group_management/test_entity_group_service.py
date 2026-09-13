@@ -22,7 +22,11 @@ from entity_group_management import (
     UpdateEntityGroupRequest,
 )
 from entity_group_management.service import EntityGroupService
-from libram_types.libram_types import EntityGroupMemberDetail, EntityGroupRecord
+from libram_types.libram_types import (
+    EntityGroupMemberDetail,
+    EntityGroupMemberRecord,
+    EntityGroupRecord,
+)
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -35,6 +39,7 @@ class FakeDatabase:
         self.groups: dict[UUID, EntityGroupRecord] = {}
         self.members: dict[tuple[UUID, UUID], str] = {}
         self.update_calls = 0
+        self.lose_the_create_race = False
 
     def add_entity(self, code: str, datasource: str = "test-datasource") -> UUID:
         entity_id = uuid4()
@@ -44,6 +49,12 @@ class FakeDatabase:
             "datasource": datasource,
         }
         return entity_id
+
+    def remove_entity(self, entity_id: UUID) -> None:
+        """Delete an entity, cascading its memberships the way the FK does."""
+        del self.entities[entity_id]
+        for key in [key for key in self.members if key[1] == entity_id]:
+            del self.members[key]
 
     def get_entity_by_id_raw(self, entity_id: UUID):
         return self.entities.get(entity_id)
@@ -58,6 +69,10 @@ class FakeDatabase:
         return None
 
     def create_entity_group(self, code, name, description=None, quote_currency_id=None):
+        if self.lose_the_create_race:
+            # Stands in for a concurrent create taking the code between the
+            # service's check and this insert.
+            return None
         record = EntityGroupRecord(
             id=uuid4(),
             code=code,
@@ -92,7 +107,9 @@ class FakeDatabase:
         self, group_id: UUID, entity_id: UUID, strength: str
     ):
         self.members[(group_id, entity_id)] = strength
-        return self.members[(group_id, entity_id)]
+        return EntityGroupMemberRecord(
+            group_id=group_id, entity_id=entity_id, strength=strength, created_at=NOW
+        )
 
     def delete_entity_group_member(self, group_id: UUID, entity_id: UUID) -> bool:
         return self.members.pop((group_id, entity_id), None) is not None
@@ -106,6 +123,8 @@ class FakeDatabase:
                 entity_code=self.entities[entity_id]["code"],
                 datasource=self.entities[entity_id]["datasource"],
                 strength=strength,
+                # The real column is timestamptz NOT NULL DEFAULT now().
+                created_at=NOW,
             )
             for (member_group_id, entity_id), strength in self.members.items()
             if member_group_id == group_id
@@ -294,7 +313,7 @@ def test_upsert_member_adds_and_reports_the_entity(db, service):
         "entity_code": "BTC",
         "datasource": "coindesk-ohlc-json",
         "strength": "strong",
-        "created_at": None,
+        "created_at": NOW.isoformat(),
     }
 
 
@@ -398,3 +417,75 @@ def test_delete_member_reports_a_membership_that_is_not_there(db, service):
 def test_delete_member_reports_a_missing_group(service):
     with pytest.raises(EntityGroupNotFound):
         service.delete_member("nope", uuid4())
+
+
+def test_deleting_an_entity_removes_its_membership(db, service):
+    # entity_group_member.entity_id cascades with the entity, so a deleted entity
+    # cannot linger as a member.
+    btc = db.add_entity("BTC")
+    wbtc = db.add_entity("WBTC")
+    service.create_group(create_body())
+    service.upsert_member("btc", btc, EntityGroupMemberRequest(strength="strong"))
+    service.upsert_member("btc", wbtc, EntityGroupMemberRequest(strength="weak"))
+
+    db.remove_entity(wbtc)
+
+    assert [m["entity_code"] for m in service.list_members("btc")] == ["BTC"]
+
+
+# ---------------------------------------------------------------------------
+# input that must not reach the database
+# ---------------------------------------------------------------------------
+def test_create_group_rejects_a_blank_name(service):
+    with pytest.raises(EntityGroupValidationError) as caught:
+        service.create_group(create_body(name="   "))
+
+    assert caught.value.detail["field"] == "name"
+
+
+def test_update_group_rejects_an_explicit_null_name(db, service):
+    # name is NOT NULL: null is not a way to clear it, and must not reach the
+    # UPDATE as SET name = NULL.
+    service.create_group(create_body())
+
+    with pytest.raises(EntityGroupValidationError) as caught:
+        service.update_group("btc", UpdateEntityGroupRequest(name=None))
+
+    assert caught.value.status_code == 422
+    assert caught.value.detail == {
+        "error": "invalid_value",
+        "field": "name",
+        "value": None,
+        "reason": "must not be null",
+    }
+    assert db.update_calls == 0
+
+
+def test_update_group_rejects_a_blank_name(db, service):
+    service.create_group(create_body())
+
+    with pytest.raises(EntityGroupValidationError):
+        service.update_group("btc", UpdateEntityGroupRequest(name="  "))
+
+    assert db.update_calls == 0
+
+
+def test_create_group_reports_a_lost_race_as_a_conflict(db, service):
+    # A concurrent create can take the code between the service's check and the
+    # insert; the database reports that as a taken code rather than raising.
+    db.lose_the_create_race = True
+
+    with pytest.raises(EntityGroupCodeExists) as caught:
+        service.create_group(create_body())
+
+    assert caught.value.status_code == 409
+
+
+def test_get_group_returns_the_created_group(service):
+    created = service.create_group(create_body(description="Bitcoin reference"))
+
+    assert service.get_group("btc") == created
+
+
+def test_list_groups_is_empty_before_anything_is_created(service):
+    assert service.list_groups() == []

@@ -223,6 +223,7 @@ CREATE TABLE IF NOT EXISTS entity_group_member (
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (group_id, entity_id)
 );
--- Primary key serves group-first lookups; this index serves entity-to-groups lookups.
+-- The primary key serves group-first lookups; this index keeps the entity-delete
+-- cascade from scanning the membership table.
 CREATE INDEX IF NOT EXISTS idx_entity_group_member_entity
     ON entity_group_member (entity_id);

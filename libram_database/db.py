@@ -3,11 +3,11 @@ from collections.abc import Iterable
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from libram_types.libram_types import (
     DailyPrice,
@@ -48,7 +48,7 @@ class Database:
             conn.execute(text(ddl))
 
     # datasource methods
-    def get_datasource_raw(self, datasource_id: UUID) -> Optional[dict[str, object]]:
+    def get_datasource_raw(self, datasource_id: UUID) -> dict[str, object] | None:
         with self.engine.connect() as conn:
             q = text("SELECT * FROM datasource WHERE id = :id")
             res = conn.execute(q, {"id": str(datasource_id)})
@@ -56,7 +56,7 @@ class Database:
             return dict(row) if row else None
 
     # entity methods
-    def get_entity_by_id_raw(self, identifier: UUID) -> Optional[dict[str, object]]:
+    def get_entity_by_id_raw(self, identifier: UUID) -> dict[str, object] | None:
         """Lookup an entity by UUID.
 
         Returns a mapping with keys matching the `entity` table columns.
@@ -67,7 +67,7 @@ class Database:
             row = res.mappings().first()
             return dict(row) if row else None
 
-    def get_entity_by_code_raw(self, code: str) -> Optional[dict[str, object]]:
+    def get_entity_by_code_raw(self, code: str) -> dict[str, object] | None:
         """Lookup an entity by code.
 
         Returns a mapping with keys matching the `entity` table columns.
@@ -78,7 +78,13 @@ class Database:
             row = res.mappings().first()
             return dict(row) if row else None
 
-    def query_entities(self, entity_id: Optional[UUID], entity_code: Optional[str], entity_name: Optional[str], frequency: Optional[str]) -> Iterable[EntityRecord]:
+    def query_entities(
+        self,
+        entity_id: UUID | None,
+        entity_code: str | None,
+        entity_name: str | None,
+        frequency: str | None,
+    ) -> Iterable[EntityRecord]:
         """Queries entities by code and/or name. Code parameter is exact match. Name parameter supports partial match (LIKE %param%)."""
         q = text(
             """
@@ -91,14 +97,24 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": entity_id, "code": entity_code, "name": entity_name, "frequency": frequency})
+            res = conn.execute(
+                q,
+                {
+                    "entity_id": entity_id,
+                    "code": entity_code,
+                    "name": entity_name,
+                    "frequency": frequency,
+                },
+            )
             rows = res.mappings().all()
 
         out: list[EntityRecord] = []
         for r in rows:
             db_entity_id = r.get("id")
             if not db_entity_id or not isinstance(db_entity_id, UUID):
-                raise RuntimeError("entity id is not a UUID")  # should not be possible, id is required UUID
+                raise RuntimeError(
+                    "entity id is not a UUID"
+                )  # should not be possible, id is required UUID
             out.append(
                 EntityRecord(
                     id=db_entity_id,
@@ -109,7 +125,9 @@ class Database:
                     config=r.get("config"),
                     type=r.get("type"),
                     frequency=r.get("frequency"),
-                    has_weekend=bool(r.get("has_weekend")) if r.get("has_weekend") else False,
+                    has_weekend=bool(r.get("has_weekend"))
+                    if r.get("has_weekend")
+                    else False,
                     timezone=r.get("timezone"),
                     min_timestamp=r.get("min_timestamp"),
                 )
@@ -147,14 +165,22 @@ class Database:
             for p in prices:
                 # skip if price is null to avoid inserting invalid data
                 has_single_price = p.price is not None and p.timestamp is not None
-                has_ohlc = (p.open is not None and p.high is not None and p.low is not None and p.close is not None
-                            and p.timestamp_start is not None and p.timestamp_end is not None)
+                has_ohlc = (
+                    p.open is not None
+                    and p.high is not None
+                    and p.low is not None
+                    and p.close is not None
+                    and p.timestamp_start is not None
+                    and p.timestamp_end is not None
+                )
                 if not has_single_price and not has_ohlc:
                     continue
 
                 # skip if timestamp is null or not a valid datetime to avoid inserting invalid data
                 # or if timestamp range is invalid (start or end is null or not a valid datetime or start is after end)
-                valid_single_timestamp = p.timestamp is not None and isinstance(p.timestamp, datetime)
+                valid_single_timestamp = p.timestamp is not None and isinstance(
+                    p.timestamp, datetime
+                )
                 valid_timestamp_range = (
                     p.timestamp_start is not None
                     and isinstance(p.timestamp_start, datetime)
@@ -199,7 +225,14 @@ class Database:
 
         return len(rows)
 
-    def query_prices(self, entity_id: UUID, start: datetime, end: datetime, page: int = 0, size: int = 10) -> Iterable[PriceRecord]:
+    def query_prices(
+        self,
+        entity_id: UUID,
+        start: datetime,
+        end: datetime,
+        page: int = 0,
+        size: int = 10,
+    ) -> Iterable[PriceRecord]:
         """Query both single-timestamp and interval (OHLC) price rows covering the range.
         Range is inclusive of start and exclusive of end (i.e. [start, end)).
         Returns a list of PriceRecord with timestamps in the requested range.
@@ -218,7 +251,16 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end, "limit": size, "offset": page * size})
+            res = conn.execute(
+                q,
+                {
+                    "entity_id": str(entity_id),
+                    "start": start,
+                    "end": end,
+                    "limit": size,
+                    "offset": page * size,
+                },
+            )
             rows = res.mappings().all()
 
         out = []
@@ -260,7 +302,9 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            res = conn.execute(
+                q, {"entity_id": str(entity_id), "start": start, "end": end}
+            )
             row = res.mappings().first()
             count = row.get("c") if row else None
             return int(count) if count is not None else 0
@@ -283,18 +327,28 @@ class Database:
         if not isinstance(entity_id, UUID):
             raise RuntimeError("snapshot state entity_id is not a UUID")
         return SnapshotStateRecord(
-            entity_id=entity_id, enabled=bool(row["enabled"]),
-            interval_seconds=int(row["interval_seconds"]), next_due_at=row["next_due_at"],
-            lease_token=row.get("lease_token"), lease_expires_at=row.get("lease_expires_at"),
-            worker_id=row.get("worker_id"), attempt_count=int(row["attempt_count"]),
+            entity_id=entity_id,
+            enabled=bool(row["enabled"]),
+            interval_seconds=int(row["interval_seconds"]),
+            next_due_at=row["next_due_at"],
+            lease_token=row.get("lease_token"),
+            lease_expires_at=row.get("lease_expires_at"),
+            worker_id=row.get("worker_id"),
+            attempt_count=int(row["attempt_count"]),
             consecutive_failures=int(row["consecutive_failures"]),
-            last_started_at=row.get("last_started_at"), last_succeeded_at=row.get("last_succeeded_at"),
-            last_failed_at=row.get("last_failed_at"), last_observed_at=row.get("last_observed_at"),
-            last_duration_ms=row.get("last_duration_ms"), last_error=row.get("last_error"),
-            created_at=row.get("created_at"), updated_at=row.get("updated_at"),
+            last_started_at=row.get("last_started_at"),
+            last_succeeded_at=row.get("last_succeeded_at"),
+            last_failed_at=row.get("last_failed_at"),
+            last_observed_at=row.get("last_observed_at"),
+            last_duration_ms=row.get("last_duration_ms"),
+            last_error=row.get("last_error"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
         )
 
-    def ensure_snapshot_state(self, entity_id: UUID, interval_seconds: int, enabled: bool = True) -> SnapshotStateRecord:
+    def ensure_snapshot_state(
+        self, entity_id: UUID, interval_seconds: int, enabled: bool = True
+    ) -> SnapshotStateRecord:
         if interval_seconds <= 0:
             raise ValueError("interval_seconds must be positive")
         query = text("""INSERT INTO snapshot_state (entity_id, interval_seconds, enabled, next_due_at)
@@ -303,12 +357,25 @@ class Database:
             ON CONFLICT (entity_id) DO UPDATE SET interval_seconds = EXCLUDED.interval_seconds,
                 enabled = EXCLUDED.enabled, updated_at = now() RETURNING *""")
         with self.engine.begin() as conn:
-            row = conn.execute(query, {"entity_id": str(entity_id), "interval_seconds": interval_seconds, "enabled": enabled}).mappings().first()
+            row = (
+                conn.execute(
+                    query,
+                    {
+                        "entity_id": str(entity_id),
+                        "interval_seconds": interval_seconds,
+                        "enabled": enabled,
+                    },
+                )
+                .mappings()
+                .first()
+            )
         if not row:
             raise ValueError("entity does not exist or is not CONTINUOUS")
         return self._snapshot_state_record(row)
 
-    def claim_due_snapshot(self, lease_token: UUID, worker_id: str, lease_duration_seconds: int) -> Optional[SnapshotStateRecord]:
+    def claim_due_snapshot(
+        self, lease_token: UUID, worker_id: str, lease_duration_seconds: int
+    ) -> SnapshotStateRecord | None:
         if lease_duration_seconds <= 0:
             raise ValueError("lease_duration_seconds must be positive")
         query = text("""WITH candidate AS (SELECT entity_id FROM snapshot_state
@@ -319,29 +386,71 @@ class Database:
             last_started_at = now(), attempt_count = state.attempt_count + 1, updated_at = now()
             FROM candidate WHERE state.entity_id = candidate.entity_id RETURNING state.*""")
         with self.engine.begin() as conn:
-            row = conn.execute(query, {"lease_token": str(lease_token), "worker_id": worker_id, "duration": lease_duration_seconds}).mappings().first()
+            row = (
+                conn.execute(
+                    query,
+                    {
+                        "lease_token": str(lease_token),
+                        "worker_id": worker_id,
+                        "duration": lease_duration_seconds,
+                    },
+                )
+                .mappings()
+                .first()
+            )
         return self._snapshot_state_record(row) if row else None
 
-    def renew_snapshot_lease(self, entity_id: UUID, lease_token: UUID, lease_duration_seconds: int) -> bool:
+    def renew_snapshot_lease(
+        self, entity_id: UUID, lease_token: UUID, lease_duration_seconds: int
+    ) -> bool:
         if lease_duration_seconds <= 0:
             raise ValueError("lease_duration_seconds must be positive")
         query = text("""UPDATE snapshot_state SET lease_expires_at = now() + (:duration * interval '1 second'), updated_at = now()
             WHERE entity_id = :entity_id AND lease_token = :lease_token""")
         with self.engine.begin() as conn:
-            result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "duration": lease_duration_seconds})
+            result = conn.execute(
+                query,
+                {
+                    "entity_id": str(entity_id),
+                    "lease_token": str(lease_token),
+                    "duration": lease_duration_seconds,
+                },
+            )
         return result.rowcount == 1
 
-    def complete_snapshot(self, entity_id: UUID, lease_token: UUID, observed_at: datetime, duration_ms: int) -> bool:
+    def complete_snapshot(
+        self,
+        entity_id: UUID,
+        lease_token: UUID,
+        observed_at: datetime,
+        duration_ms: int,
+    ) -> bool:
         query = text("""UPDATE snapshot_state SET lease_token = NULL, lease_expires_at = NULL, worker_id = NULL,
             consecutive_failures = 0, last_succeeded_at = now(), last_observed_at = :observed_at,
             last_duration_ms = :duration_ms, last_error = NULL,
             next_due_at = now() + (interval_seconds * interval '1 second'), updated_at = now()
             WHERE entity_id = :entity_id AND lease_token = :lease_token""")
         with self.engine.begin() as conn:
-            result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "observed_at": observed_at, "duration_ms": duration_ms})
+            result = conn.execute(
+                query,
+                {
+                    "entity_id": str(entity_id),
+                    "lease_token": str(lease_token),
+                    "observed_at": observed_at,
+                    "duration_ms": duration_ms,
+                },
+            )
         return result.rowcount == 1
 
-    def fail_snapshot(self, entity_id: UUID, lease_token: UUID, error: str, retry_delay_seconds: int, max_backoff_seconds: int, jitter_seconds: int = 0) -> bool:
+    def fail_snapshot(
+        self,
+        entity_id: UUID,
+        lease_token: UUID,
+        error: str,
+        retry_delay_seconds: int,
+        max_backoff_seconds: int,
+        jitter_seconds: int = 0,
+    ) -> bool:
         if retry_delay_seconds <= 0 or max_backoff_seconds <= 0 or jitter_seconds < 0:
             raise ValueError("retry and backoff values are invalid")
         query = text("""UPDATE snapshot_state SET lease_token = NULL, lease_expires_at = NULL, worker_id = NULL,
@@ -352,16 +461,30 @@ class Database:
             next_due_at = now() + (LEAST(:max_backoff, :retry_delay * power(2, consecutive_failures) + :jitter) * interval '1 second'), updated_at = now()
             WHERE entity_id = :entity_id AND lease_token = :lease_token""")
         with self.engine.begin() as conn:
-            result = conn.execute(query, {"entity_id": str(entity_id), "lease_token": str(lease_token), "error": error, "retry_delay": retry_delay_seconds, "max_backoff": max_backoff_seconds, "jitter": jitter_seconds})
+            result = conn.execute(
+                query,
+                {
+                    "entity_id": str(entity_id),
+                    "lease_token": str(lease_token),
+                    "error": error,
+                    "retry_delay": retry_delay_seconds,
+                    "max_backoff": max_backoff_seconds,
+                    "jitter": jitter_seconds,
+                },
+            )
         return result.rowcount == 1
 
-    def create_new_task(self, entity_id: UUID, start: datetime, end: datetime) -> TaskRecord:
+    def create_new_task(
+        self, entity_id: UUID, start: datetime, end: datetime
+    ) -> TaskRecord:
         """Create a new task row and return a TaskRecord for it."""
         q = text(
             "INSERT INTO task (entity_id, timestamp_start, timestamp_end) VALUES (:entity_id, :start, :end) RETURNING *"
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            res = conn.execute(
+                q, {"entity_id": str(entity_id), "start": start, "end": end}
+            )
             row = res.mappings().first()
             if not row:
                 raise RuntimeError("failed to create task")
@@ -384,13 +507,17 @@ class Database:
             next_run_at=row.get("next_run_at"),
         )
 
-    def get_task_for_range(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[TaskRecord]:
+    def get_task_for_range(
+        self, entity_id: UUID, start: datetime, end: datetime
+    ) -> TaskRecord | None:
         """Return a single task matching the entity and exact start/end range, or None."""
         q = text(
             "SELECT * FROM task WHERE entity_id = :entity_id AND timestamp_start = :start AND timestamp_end = :end LIMIT 1"
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            res = conn.execute(
+                q, {"entity_id": str(entity_id), "start": start, "end": end}
+            )
             row = res.mappings().first()
             if not row:
                 return None
@@ -412,18 +539,21 @@ class Database:
             created_at=row.get("created_at"),
         )
 
-    def query_tasks(self, status: Optional[str], page: int = 0, size: int = 10) -> Iterable[TaskRecord]:
+    def query_tasks(
+        self, status: str | None, page: int = 0, size: int = 10
+    ) -> Iterable[TaskRecord]:
         """Return a list of tasks optionally filtered by status, ordered by created_at ascending, limited to the specified number."""
         q = text(
             "SELECT * FROM task WHERE (status = :status OR :status IS NULL) ORDER BY created_at ASC LIMIT :limit OFFSET :offset"
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"status": status, "limit": size, "offset": page * size})
+            res = conn.execute(
+                q, {"status": status, "limit": size, "offset": page * size}
+            )
             rows = res.mappings().all()
 
         out = []
         for r in rows:
-
             task_id = r.get("id")
             if not task_id or not isinstance(task_id, UUID):
                 raise RuntimeError("task id is not a UUID")
@@ -444,7 +574,12 @@ class Database:
             )
         return out
 
-    def find_and_lock_next_task(self, retry_delay_seconds: int, poll_interval: int, max_tasks_per_datasource: int) -> Optional[TaskRecord]:
+    def find_and_lock_next_task(
+        self,
+        retry_delay_seconds: int,
+        poll_interval: int,
+        max_tasks_per_datasource: int,
+    ) -> TaskRecord | None:
         """Find the next task that is ready to be executed
         * status should be OPEN
         * next_run_at should be in the past (i.e. task is ready to run)
@@ -486,7 +621,14 @@ class Database:
             """
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {"retry_delay_seconds": retry_delay_seconds, "poll_interval": poll_interval, "max_tasks_per_datasource": max_tasks_per_datasource})
+            res = conn.execute(
+                q,
+                {
+                    "retry_delay_seconds": retry_delay_seconds,
+                    "poll_interval": poll_interval,
+                    "max_tasks_per_datasource": max_tasks_per_datasource,
+                },
+            )
             row = res.mappings().first()
             if not row:
                 return None
@@ -510,7 +652,7 @@ class Database:
             )
 
     def fail_task(self, task_id: UUID, max_retries: int):
-        """ Handle task failure, if retry_count exceeds max_retries, set status to FAILED,
+        """Handle task failure, if retry_count exceeds max_retries, set status to FAILED,
         otherwise set it back to OPEN for retry. Locking the task already incremented the
         retry_count, so we just need to check if it exceeded max_retries."""
         q = text(
@@ -567,14 +709,20 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            res = conn.execute(
+                q, {"entity_id": str(entity_id), "start": start, "end": end}
+            )
             rows = res.mappings().all()
         return [
-            DailyPrice(day=row["day"], observed_at=row["observed_at"], value=row["value"])
+            DailyPrice(
+                day=row["day"], observed_at=row["observed_at"], value=row["value"]
+            )
             for row in rows
         ]
 
-    def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> list[tuple[datetime, float]]:
+    def query_close_series(
+        self, entity_id: UUID, start: datetime, end: datetime
+    ) -> list[tuple[datetime, float]]:
         """Fetch the full ordered close/price series for an entity and date range.
 
         Used by moving-average computations which need the full window (no pagination).
@@ -598,7 +746,9 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            res = conn.execute(
+                q, {"entity_id": str(entity_id), "start": start, "end": end}
+            )
             rows = res.all()
         out: list[tuple[datetime, float]] = []
         for r in rows:
@@ -609,7 +759,9 @@ class Database:
             out.append((ts, float(value)))
         return out
 
-    def query_price_summary(self, entity_id: UUID, start: datetime, end: datetime) -> Optional[dict[str, object]]:
+    def query_price_summary(
+        self, entity_id: UUID, start: datetime, end: datetime
+    ) -> dict[str, object] | None:
         """Query aggregate summary statistics for a price series in a date range.
 
         Uses COALESCE(close, price) to handle both OHLC and single-price entities.
@@ -663,7 +815,9 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            res = conn.execute(
+                q, {"entity_id": str(entity_id), "start": start, "end": end}
+            )
             row = res.mappings().first()
             if not row:
                 return None
@@ -704,16 +858,19 @@ class Database:
             """
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {
-                "entity_id": str(entity_id),
-                "metrics": json.dumps(metrics),
-                "source_name": source_name,
-                "source_url": source_url,
-                "as_of_date": as_of_date,
-                "confidence": confidence,
-                "notes": notes,
-                "uploaded_by": uploaded_by,
-            })
+            res = conn.execute(
+                q,
+                {
+                    "entity_id": str(entity_id),
+                    "metrics": json.dumps(metrics),
+                    "source_name": source_name,
+                    "source_url": source_url,
+                    "as_of_date": as_of_date,
+                    "confidence": confidence,
+                    "notes": notes,
+                    "uploaded_by": uploaded_by,
+                },
+            )
             row = res.mappings().first()
             if not row:
                 raise RuntimeError("failed to insert fundamentals")
@@ -724,7 +881,7 @@ class Database:
         entity_id: UUID,
         mode: str = "latest_only",
         min_confidence: str = "low",
-        as_of_date_after: Optional[str] = None,
+        as_of_date_after: str | None = None,
     ) -> list[dict]:
         """Query fundamentals snapshots for an entity, ordered by uploaded_at DESC.
 
@@ -819,12 +976,17 @@ class Database:
         if not isinstance(entity_id, UUID):
             raise RuntimeError("dividend event entity_id is not a UUID")
         return DividendEventRecord(
-            id=event_id, entity_id=entity_id, ex_date=row.get("ex_date"),
-            declaration_date=row.get("declaration_date"), record_date=row.get("record_date"),
-            payment_date=row.get("payment_date"), dividend_type=row.get("dividend_type"),
+            id=event_id,
+            entity_id=entity_id,
+            ex_date=row.get("ex_date"),
+            declaration_date=row.get("declaration_date"),
+            record_date=row.get("record_date"),
+            payment_date=row.get("payment_date"),
+            dividend_type=row.get("dividend_type"),
             amount_per_share=row.get("amount_per_share"),
             amount_per_share_entity_id=row.get("amount_per_share_entity_id"),
-            created_at=row.get("created_at"), updated_at=row.get("updated_at"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
         )
 
     @staticmethod
@@ -833,9 +995,12 @@ class Database:
             if not isinstance(row.get(field), UUID):
                 raise RuntimeError(f"portfolio dividend {field} is not a UUID")
         return PortfolioDividendRecord(
-            id=row.get("id"), portfolio_id=row.get("portfolio_id"),
-            dividend_event_id=row.get("dividend_event_id"), fees=row.get("fees"),
-            fees_entity_id=row.get("fees_entity_id"), created_at=row.get("created_at"),
+            id=row.get("id"),
+            portfolio_id=row.get("portfolio_id"),
+            dividend_event_id=row.get("dividend_event_id"),
+            fees=row.get("fees"),
+            fees_entity_id=row.get("fees_entity_id"),
+            created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
         )
 
@@ -863,7 +1028,7 @@ class Database:
             rows = res.mappings().all()
         return [self._row_to_portfolio(r) for r in rows]
 
-    def get_portfolio(self, portfolio_id: UUID) -> Optional[PortfolioRecord]:
+    def get_portfolio(self, portfolio_id: UUID) -> PortfolioRecord | None:
         """Lookup a portfolio by UUID."""
         q = text("SELECT * FROM portfolio WHERE id = :id")
         with self.engine.connect() as conn:
@@ -873,7 +1038,9 @@ class Database:
                 return None
         return self._row_to_portfolio(row)
 
-    def update_portfolio(self, portfolio_id: UUID, name: str, description: str = "") -> Optional[PortfolioRecord]:
+    def update_portfolio(
+        self, portfolio_id: UUID, name: str, description: str = ""
+    ) -> PortfolioRecord | None:
         """Update a portfolio's name and description. Returns the updated record or None if not found."""
         q = text(
             """
@@ -884,7 +1051,9 @@ class Database:
             """
         )
         with self.engine.begin() as conn:
-            res = conn.execute(q, {"id": str(portfolio_id), "name": name, "description": description})
+            res = conn.execute(
+                q, {"id": str(portfolio_id), "name": name, "description": description}
+            )
             row = res.mappings().first()
             if not row:
                 return None
@@ -897,67 +1066,215 @@ class Database:
             res = conn.execute(q, {"id": str(portfolio_id)})
             return res.rowcount > 0
 
-    def create_dividend_event(self, *, entity_id: UUID, declaration_date=None, ex_date=None,
-                              record_date=None, payment_date=None, dividend_type=None,
-                              amount_per_share=None, amount_per_share_entity_id=None):
-        columns = ["entity_id", "declaration_date", "ex_date", "record_date", "payment_date", "dividend_type", "amount_per_share", "amount_per_share_entity_id"]
-        q = text(f"INSERT INTO dividend_event ({', '.join(columns)}) VALUES ({', '.join(':'+c for c in columns)}) RETURNING *")
-        params = {"entity_id": str(entity_id), "declaration_date": declaration_date, "ex_date": ex_date,
-                  "record_date": record_date, "payment_date": payment_date, "dividend_type": dividend_type,
-                  "amount_per_share": amount_per_share,
-                  "amount_per_share_entity_id": str(amount_per_share_entity_id) if amount_per_share_entity_id else None}
-        with self.engine.begin() as conn: row = conn.execute(q, params).mappings().first()
-        if not row: raise RuntimeError("failed to create dividend event")
+    def create_dividend_event(
+        self,
+        *,
+        entity_id: UUID,
+        declaration_date=None,
+        ex_date=None,
+        record_date=None,
+        payment_date=None,
+        dividend_type=None,
+        amount_per_share=None,
+        amount_per_share_entity_id=None,
+    ):
+        columns = [
+            "entity_id",
+            "declaration_date",
+            "ex_date",
+            "record_date",
+            "payment_date",
+            "dividend_type",
+            "amount_per_share",
+            "amount_per_share_entity_id",
+        ]
+        q = text(
+            f"INSERT INTO dividend_event ({', '.join(columns)}) VALUES ({', '.join(':' + c for c in columns)}) RETURNING *"
+        )
+        params = {
+            "entity_id": str(entity_id),
+            "declaration_date": declaration_date,
+            "ex_date": ex_date,
+            "record_date": record_date,
+            "payment_date": payment_date,
+            "dividend_type": dividend_type,
+            "amount_per_share": amount_per_share,
+            "amount_per_share_entity_id": str(amount_per_share_entity_id)
+            if amount_per_share_entity_id
+            else None,
+        }
+        with self.engine.begin() as conn:
+            row = conn.execute(q, params).mappings().first()
+        if not row:
+            raise RuntimeError("failed to create dividend event")
         return self._row_to_dividend_event(row)
 
     def get_dividend_event(self, event_id):
-        with self.engine.connect() as conn: row = conn.execute(text("SELECT * FROM dividend_event WHERE id=:id"), {"id": str(event_id)}).mappings().first()
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(
+                    text("SELECT * FROM dividend_event WHERE id=:id"),
+                    {"id": str(event_id)},
+                )
+                .mappings()
+                .first()
+            )
         return self._row_to_dividend_event(row) if row else None
 
     def list_dividend_events(self, entity_id=None, ex_date_from=None, ex_date_to=None):
-        clauses = ["1=1"]; params = {}
-        if entity_id: clauses.append("entity_id=:entity_id"); params["entity_id"] = str(entity_id)
-        if ex_date_from: clauses.append("ex_date>=:ex_date_from"); params["ex_date_from"] = ex_date_from
-        if ex_date_to: clauses.append("ex_date<=:ex_date_to"); params["ex_date_to"] = ex_date_to
-        with self.engine.connect() as conn: rows = conn.execute(text(f"SELECT * FROM dividend_event WHERE {' AND '.join(clauses)} ORDER BY ex_date ASC, id ASC"), params).mappings().all()
+        clauses = ["1=1"]
+        params = {}
+        if entity_id:
+            clauses.append("entity_id=:entity_id")
+            params["entity_id"] = str(entity_id)
+        if ex_date_from:
+            clauses.append("ex_date>=:ex_date_from")
+            params["ex_date_from"] = ex_date_from
+        if ex_date_to:
+            clauses.append("ex_date<=:ex_date_to")
+            params["ex_date_to"] = ex_date_to
+        with self.engine.connect() as conn:
+            rows = (
+                conn.execute(
+                    text(
+                        f"SELECT * FROM dividend_event WHERE {' AND '.join(clauses)} ORDER BY ex_date ASC, id ASC"
+                    ),
+                    params,
+                )
+                .mappings()
+                .all()
+            )
         return [self._row_to_dividend_event(r) for r in rows]
 
     def update_dividend_event(self, event_id, **values):
-        values = {k:v for k,v in values.items() if k in {"entity_id", "declaration_date", "ex_date", "record_date", "payment_date", "dividend_type", "amount_per_share", "amount_per_share_entity_id"}}
-        if not values: return self.get_dividend_event(event_id)
-        params = {k:(str(v) if isinstance(v, UUID) else v) for k,v in values.items()}; params["id"] = str(event_id)
-        with self.engine.begin() as conn: row = conn.execute(text(f"UPDATE dividend_event SET {', '.join(f'{k}=:{k}' for k in values)}, updated_at=now() WHERE id=:id RETURNING *"), params).mappings().first()
+        values = {
+            k: v
+            for k, v in values.items()
+            if k
+            in {
+                "entity_id",
+                "declaration_date",
+                "ex_date",
+                "record_date",
+                "payment_date",
+                "dividend_type",
+                "amount_per_share",
+                "amount_per_share_entity_id",
+            }
+        }
+        if not values:
+            return self.get_dividend_event(event_id)
+        params = {k: (str(v) if isinstance(v, UUID) else v) for k, v in values.items()}
+        params["id"] = str(event_id)
+        with self.engine.begin() as conn:
+            row = (
+                conn.execute(
+                    text(
+                        f"UPDATE dividend_event SET {', '.join(f'{k}=:{k}' for k in values)}, updated_at=now() WHERE id=:id RETURNING *"
+                    ),
+                    params,
+                )
+                .mappings()
+                .first()
+            )
         return self._row_to_dividend_event(row) if row else None
 
     def delete_dividend_event(self, event_id):
-        with self.engine.begin() as conn: return conn.execute(text("DELETE FROM dividend_event WHERE id=:id"), {"id": str(event_id)}).rowcount > 0
+        with self.engine.begin() as conn:
+            return (
+                conn.execute(
+                    text("DELETE FROM dividend_event WHERE id=:id"),
+                    {"id": str(event_id)},
+                ).rowcount
+                > 0
+            )
 
-    def create_portfolio_dividend(self, *, portfolio_id: UUID, dividend_event_id: UUID, fees: Decimal = Decimal("0"), fees_entity_id=None):
-        q = text("INSERT INTO portfolio_dividend (portfolio_id, dividend_event_id, fees, fees_entity_id) VALUES (:portfolio_id,:dividend_event_id,:fees,:fees_entity_id) RETURNING *")
-        params = {"portfolio_id": str(portfolio_id), "dividend_event_id": str(dividend_event_id), "fees": fees,
-                  "fees_entity_id": str(fees_entity_id) if fees_entity_id else None}
-        with self.engine.begin() as conn: row = conn.execute(q, params).mappings().first()
-        if not row: raise RuntimeError("failed to create portfolio dividend")
+    def create_portfolio_dividend(
+        self,
+        *,
+        portfolio_id: UUID,
+        dividend_event_id: UUID,
+        fees: Decimal = Decimal(0),
+        fees_entity_id=None,
+    ):
+        q = text(
+            "INSERT INTO portfolio_dividend (portfolio_id, dividend_event_id, fees, fees_entity_id) VALUES (:portfolio_id,:dividend_event_id,:fees,:fees_entity_id) RETURNING *"
+        )
+        params = {
+            "portfolio_id": str(portfolio_id),
+            "dividend_event_id": str(dividend_event_id),
+            "fees": fees,
+            "fees_entity_id": str(fees_entity_id) if fees_entity_id else None,
+        }
+        with self.engine.begin() as conn:
+            row = conn.execute(q, params).mappings().first()
+        if not row:
+            raise RuntimeError("failed to create portfolio dividend")
         return self._row_to_portfolio_dividend(row)
 
     def get_portfolio_dividend(self, portfolio_id, dividend_event_id):
-        q=text("SELECT * FROM portfolio_dividend WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id")
-        with self.engine.connect() as conn: row=conn.execute(q,{"portfolio_id":str(portfolio_id),"dividend_event_id":str(dividend_event_id)}).mappings().first()
+        q = text(
+            "SELECT * FROM portfolio_dividend WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id"
+        )
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(
+                    q,
+                    {
+                        "portfolio_id": str(portfolio_id),
+                        "dividend_event_id": str(dividend_event_id),
+                    },
+                )
+                .mappings()
+                .first()
+            )
         return self._row_to_portfolio_dividend(row) if row else None
 
     def update_portfolio_dividend(self, portfolio_id, dividend_event_id, **values):
-        values={k:v for k,v in values.items() if k in {"fees","fees_entity_id"}}
-        if not values: return self.get_portfolio_dividend(portfolio_id, dividend_event_id)
-        params={k:(str(v) if isinstance(v,UUID) else v) for k,v in values.items()}; params.update({"portfolio_id":str(portfolio_id),"dividend_event_id":str(dividend_event_id)})
-        q=text(f"UPDATE portfolio_dividend SET {', '.join(f'{k}=:{k}' for k in values)}, updated_at=now() WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id RETURNING *")
-        with self.engine.begin() as conn: row=conn.execute(q,params).mappings().first()
+        values = {k: v for k, v in values.items() if k in {"fees", "fees_entity_id"}}
+        if not values:
+            return self.get_portfolio_dividend(portfolio_id, dividend_event_id)
+        params = {k: (str(v) if isinstance(v, UUID) else v) for k, v in values.items()}
+        params.update(
+            {
+                "portfolio_id": str(portfolio_id),
+                "dividend_event_id": str(dividend_event_id),
+            }
+        )
+        q = text(
+            f"UPDATE portfolio_dividend SET {', '.join(f'{k}=:{k}' for k in values)}, updated_at=now() WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id RETURNING *"
+        )
+        with self.engine.begin() as conn:
+            row = conn.execute(q, params).mappings().first()
         return self._row_to_portfolio_dividend(row) if row else None
 
     def delete_portfolio_dividend(self, portfolio_id, dividend_event_id):
-        with self.engine.begin() as conn: return conn.execute(text("DELETE FROM portfolio_dividend WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id"), {"portfolio_id":str(portfolio_id),"dividend_event_id":str(dividend_event_id)}).rowcount > 0
+        with self.engine.begin() as conn:
+            return (
+                conn.execute(
+                    text(
+                        "DELETE FROM portfolio_dividend WHERE portfolio_id=:portfolio_id AND dividend_event_id=:dividend_event_id"
+                    ),
+                    {
+                        "portfolio_id": str(portfolio_id),
+                        "dividend_event_id": str(dividend_event_id),
+                    },
+                ).rowcount
+                > 0
+            )
 
     def list_portfolio_dividends_for_portfolio(self, portfolio_id):
-        with self.engine.connect() as conn: rows=conn.execute(text("SELECT * FROM portfolio_dividend WHERE portfolio_id=:id ORDER BY created_at ASC, id ASC"),{"id":str(portfolio_id)}).mappings().all()
+        with self.engine.connect() as conn:
+            rows = (
+                conn.execute(
+                    text(
+                        "SELECT * FROM portfolio_dividend WHERE portfolio_id=:id ORDER BY created_at ASC, id ASC"
+                    ),
+                    {"id": str(portfolio_id)},
+                )
+                .mappings()
+                .all()
+            )
         return [self._row_to_portfolio_dividend(r) for r in rows]
 
     # ------------------------------------------------------------------
@@ -971,9 +1288,9 @@ class Database:
         shares,
         type: str,
         cost_basis,
-        cost_basis_entity_id: Optional[UUID],
+        cost_basis_entity_id: UUID | None,
         fees,
-        fees_entity_id: Optional[UUID],
+        fees_entity_id: UUID | None,
     ) -> PortfolioOrderRecord:
         """Insert a portfolio_order row and return the record."""
         q = text(
@@ -994,7 +1311,9 @@ class Database:
             "shares": shares,
             "type": type,
             "cost_basis": cost_basis,
-            "cost_basis_entity_id": str(cost_basis_entity_id) if cost_basis_entity_id else None,
+            "cost_basis_entity_id": str(cost_basis_entity_id)
+            if cost_basis_entity_id
+            else None,
             "fees": fees,
             "fees_entity_id": str(fees_entity_id) if fees_entity_id else None,
         }
@@ -1005,7 +1324,7 @@ class Database:
                 raise RuntimeError("failed to create order")
         return self._row_to_order(row)
 
-    def get_order(self, order_id: UUID) -> Optional[PortfolioOrderRecord]:
+    def get_order(self, order_id: UUID) -> PortfolioOrderRecord | None:
         """Lookup an order by UUID (any portfolio)."""
         q = text("SELECT * FROM portfolio_order WHERE id = :id")
         with self.engine.connect() as conn:
@@ -1015,13 +1334,17 @@ class Database:
                 return None
         return self._row_to_order(row)
 
-    def get_order_for_portfolio(self, order_id: UUID, portfolio_id: UUID) -> Optional[PortfolioOrderRecord]:
+    def get_order_for_portfolio(
+        self, order_id: UUID, portfolio_id: UUID
+    ) -> PortfolioOrderRecord | None:
         """Lookup an order scoped to a specific portfolio."""
         q = text(
             "SELECT * FROM portfolio_order WHERE id = :id AND portfolio_id = :portfolio_id"
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"id": str(order_id), "portfolio_id": str(portfolio_id)})
+            res = conn.execute(
+                q, {"id": str(order_id), "portfolio_id": str(portfolio_id)}
+            )
             row = res.mappings().first()
             if not row:
                 return None
@@ -1038,13 +1361,14 @@ class Database:
         "fees_entity_id",
     }
 
-    def update_order(self, order_id: UUID, **kwargs) -> Optional[PortfolioOrderRecord]:
+    def update_order(self, order_id: UUID, **kwargs) -> PortfolioOrderRecord | None:
         """Update an order with the given fields. Unknown keys are ignored.
 
         Returns the updated record or None if the order was not found.
         """
         updates = {
-            k: v for k, v in kwargs.items()
+            k: v
+            for k, v in kwargs.items()
             if k in self._ORDER_UPDATEABLE_COLUMNS and v is not None
         }
         if not updates:
@@ -1060,7 +1384,7 @@ class Database:
                 normalized[k] = v
         normalized["id"] = str(order_id)
 
-        set_clauses = [f"{k} = :{k}" for k in updates.keys()]
+        set_clauses = [f"{k} = :{k}" for k in updates]
         set_clauses.append("updated_at = now()")
         set_sql = ", ".join(set_clauses)
 
@@ -1079,18 +1403,22 @@ class Database:
             res = conn.execute(q, {"id": str(order_id)})
             return res.rowcount > 0
 
-    _ORDER_SORT_COLUMNS = {"date": "po.date", "entity_code": "e.code",
-                           "shares": "po.shares", "cost_basis": "po.cost_basis"}
+    _ORDER_SORT_COLUMNS = {
+        "date": "po.date",
+        "entity_code": "e.code",
+        "shares": "po.shares",
+        "cost_basis": "po.cost_basis",
+    }
 
     def query_orders(
         self,
         portfolio_id: UUID,
         page: int = 0,
         size: int = 20,
-        entity_id: Optional[UUID] = None,
-        order_type: Optional[str] = None,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
+        entity_id: UUID | None = None,
+        order_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
         sort_by: str = "date",
         sort_order: str = "desc",
     ) -> list[PortfolioOrderRecord]:
@@ -1136,10 +1464,10 @@ class Database:
     def count_orders(
         self,
         portfolio_id: UUID,
-        entity_id: Optional[UUID] = None,
-        order_type: Optional[str] = None,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
+        entity_id: UUID | None = None,
+        order_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> int:
         """Count orders for a portfolio matching the given filters."""
         clauses = ["portfolio_id = :portfolio_id"]
@@ -1166,7 +1494,9 @@ class Database:
             count = row.get("c") if row else None
             return int(count) if count is not None else 0
 
-    def get_orders_for_entity(self, portfolio_id: UUID, entity_id: UUID) -> list[PortfolioOrderRecord]:
+    def get_orders_for_entity(
+        self, portfolio_id: UUID, entity_id: UUID
+    ) -> list[PortfolioOrderRecord]:
         """Return all orders for an entity in a portfolio, ordered by date ASC."""
         q = text(
             """
@@ -1176,7 +1506,9 @@ class Database:
             """
         )
         with self.engine.connect() as conn:
-            res = conn.execute(q, {"portfolio_id": str(portfolio_id), "entity_id": str(entity_id)})
+            res = conn.execute(
+                q, {"portfolio_id": str(portfolio_id), "entity_id": str(entity_id)}
+            )
             rows = res.mappings().all()
         return [self._row_to_order(r) for r in rows]
 
@@ -1190,7 +1522,9 @@ class Database:
             rows = res.mappings().all()
         return [self._row_to_order(r) for r in rows]
 
-    def get_orders_for_portfolio(self, portfolio_id: UUID) -> list[PortfolioOrderRecord]:
+    def get_orders_for_portfolio(
+        self, portfolio_id: UUID
+    ) -> list[PortfolioOrderRecord]:
         """Alias for get_all_orders. Kept for naming clarity from the client."""
         return self.get_all_orders(portfolio_id)
 
@@ -1223,7 +1557,9 @@ class Database:
                 return None
             return row[0]
 
-    def get_price_at_or_before(self, entity_id: UUID, target: datetime) -> Decimal | None:
+    def get_price_at_or_before(
+        self, entity_id: UUID, target: datetime
+    ) -> Decimal | None:
         """Return the most recent COALESCE(close, price) value for an entity
         at or before `target`, or None if no price row exists."""
         q = text(
@@ -1296,11 +1632,14 @@ class Database:
         name: str,
         description: str | None = None,
         quote_currency_id: UUID | None = None,
-    ) -> EntityGroupRecord:
-        """Insert a group row and return the record.
+    ) -> EntityGroupRecord | None:
+        """Insert a group row, or return None if the code is already taken.
 
-        A duplicate code surfaces as a unique violation; callers check
-        ``get_entity_group_by_code()`` first and report a conflict.
+        Callers check the code first for a cheap conflict; this closes the race
+        where a concurrent create wins between that check and the insert. The
+        duplicate is detected by re-reading rather than by parsing the driver's
+        constraint name, and any other integrity failure is re-raised rather than
+        misreported as a conflict.
         """
         q = text(
             """
@@ -1315,10 +1654,15 @@ class Database:
             "description": description,
             "quote_currency_id": str(quote_currency_id) if quote_currency_id else None,
         }
-        with self.engine.begin() as conn:
-            row = conn.execute(q, params).mappings().first()
-            if not row:
-                raise RuntimeError("failed to create entity group")
+        try:
+            with self.engine.begin() as conn:
+                row = conn.execute(q, params).mappings().first()
+                if not row:
+                    raise RuntimeError("failed to create entity group")
+        except IntegrityError:
+            if self.get_entity_group_by_code(code) is not None:
+                return None
+            raise
         return self._row_to_entity_group(row)
 
     def list_entity_groups(self) -> list[EntityGroupRecord]:
@@ -1347,8 +1691,13 @@ class Database:
             if key in {"name", "description", "quote_currency_id"}
         }
         if not values:
-            raise ValueError("update_entity_group requires at least one updatable field")
-        params = {key: (str(value) if isinstance(value, UUID) else value) for key, value in values.items()}
+            raise ValueError(
+                "update_entity_group requires at least one updatable field"
+            )
+        params = {
+            key: (str(value) if isinstance(value, UUID) else value)
+            for key, value in values.items()
+        }
         params["id"] = str(group_id)
         q = text(
             f"""
@@ -1385,7 +1734,11 @@ class Database:
             RETURNING *
             """
         )
-        params = {"group_id": str(group_id), "entity_id": str(entity_id), "strength": strength}
+        params = {
+            "group_id": str(group_id),
+            "entity_id": str(entity_id),
+            "strength": strength,
+        }
         with self.engine.begin() as conn:
             row = conn.execute(q, params).mappings().first()
             if not row:
@@ -1405,7 +1758,9 @@ class Database:
                 > 0
             )
 
-    def list_entity_group_members(self, group_id: UUID) -> list[EntityGroupMemberDetail]:
+    def list_entity_group_members(
+        self, group_id: UUID
+    ) -> list[EntityGroupMemberDetail]:
         """Return a group's members joined to their entity and datasource.
 
         Ordered by entity code then datasource, which is the order fused responses
