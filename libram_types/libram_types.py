@@ -114,3 +114,43 @@ class PortfolioDividendRecord:
     fees_entity_id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+@dataclass(frozen=True)
+class DailyPrice:
+    """One observation per UTC calendar day: that day's last recorded value."""
+
+    day: date
+    observed_at: datetime
+    value: Decimal
+
+
+@dataclass(frozen=True)
+class FxPath:
+    """A resolved single-hop conversion between two currencies.
+
+    ``rate_entity_id`` names the currency entity whose own price series supplies
+    the rate, and ``direction`` is ``"direct"`` (multiply) or ``"inverse"``
+    (divide).
+    """
+
+    rate_entity_id: UUID
+    direction: str
+
+
+@dataclass(frozen=True)
+class CurrencyConversion:
+    """A converted value together with the arithmetic that produced it.
+
+    Carries the raw value, the stored rate, and the direction it was applied in,
+    so a converted value is never indistinguishable from one observed directly
+    in the target currency and its arithmetic is reproducible.
+    """
+
+    value: Decimal
+    raw_value: Decimal
+    from_currency_id: UUID | None
+    to_currency_id: UUID | None
+    rate: Decimal
+    rate_entity_id: UUID
+    direction: str
