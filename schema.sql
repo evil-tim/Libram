@@ -199,3 +199,31 @@ CREATE TABLE IF NOT EXISTS snapshot_state (
 CREATE INDEX IF NOT EXISTS idx_snapshot_state_due
     ON snapshot_state (next_due_at, entity_id)
     WHERE enabled = true;
+
+-- entity_group
+-- A named fusion context: one top-level entity assembled from several source entities.
+CREATE TABLE IF NOT EXISTS entity_group (
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    code text NOT NULL UNIQUE,
+    name text NOT NULL,
+    description text,
+    -- Output currency for fused values. NULL means PHP, matching entity.currency_id.
+    quote_currency_id uuid REFERENCES entity(id) ON DELETE RESTRICT,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- entity_group_member
+-- Explicit membership of one source entity in one group.
+CREATE TABLE IF NOT EXISTS entity_group_member (
+    group_id uuid NOT NULL REFERENCES entity_group(id) ON DELETE CASCADE,
+    entity_id uuid NOT NULL REFERENCES entity(id) ON DELETE CASCADE,
+    -- strong: the actual reference. weak: derivative or wrapped representation.
+    strength text NOT NULL CHECK (strength IN ('strong', 'weak')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (group_id, entity_id)
+);
+-- The primary key serves group-first lookups; this index keeps the entity-delete
+-- cascade from scanning the membership table.
+CREATE INDEX IF NOT EXISTS idx_entity_group_member_entity
+    ON entity_group_member (entity_id);
