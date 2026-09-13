@@ -13,7 +13,8 @@ currency named by its own ``currency_id``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import datetime
+from decimal import ROUND_HALF_UP, Context, Decimal
 from uuid import UUID
 
 from libram_types.libram_types import FxPath
@@ -26,6 +27,10 @@ CONVERTED_QUANTUM = Decimal("0.000001")
 
 #: A rate of zero or less cannot be applied in either direction.
 MINIMUM_RATE = Decimal(0)
+
+#: Quantization runs at a wider precision than the default context, so that a
+#: large magnitude cannot make ``quantize`` raise ``InvalidOperation``.
+QUANTIZE_CONTEXT = Context(prec=60, rounding=ROUND_HALF_UP)
 
 #: Every currency id is an entity id; ``None`` is PHP.
 type CurrencyId = UUID | None
@@ -44,11 +49,45 @@ class NoPath(CurrencyConversionError):
 
 
 class NoRate(CurrencyConversionError):
-    """No rate exists at or before the reference instant."""
+    """No rate exists at or before the reference instant.
+
+    Carries the entity the rate was sought from and the instant it was sought at,
+    so a caller can report which conversion failed and when rather than only that
+    one did.
+    """
+
+    def __init__(
+        self,
+        rate_entity_id: UUID,
+        at: datetime | None = None,
+        message: str | None = None,
+    ) -> None:
+        self.rate_entity_id = rate_entity_id
+        self.at = at
+        super().__init__(
+            message
+            if message is not None
+            else f"no rate for currency entity {rate_entity_id} at or before "
+            f"{at.isoformat() if at is not None else 'the reference instant'}"
+        )
 
 
 class InvalidRate(CurrencyConversionError):
     """A rate is present but is not positive."""
+
+    def __init__(
+        self,
+        rate_entity_id: UUID,
+        rate: Decimal,
+        message: str | None = None,
+    ) -> None:
+        self.rate_entity_id = rate_entity_id
+        self.rate = rate
+        super().__init__(
+            message
+            if message is not None
+            else f"rate for currency entity {rate_entity_id} is not positive: {rate}"
+        )
 
 
 def resolve_path(
@@ -95,22 +134,23 @@ def convert(value: object, path: FxPath, rate: object) -> Decimal:
     amount = to_decimal(value)
     rate_decimal = to_decimal(rate)
     if rate_decimal <= MINIMUM_RATE:
-        raise InvalidRate(
-            f"rate for currency entity {path.rate_entity_id} is not positive: {rate_decimal}"
-        )
+        raise InvalidRate(path.rate_entity_id, rate_decimal)
     if path.direction == DIRECT:
         converted = amount * rate_decimal
     elif path.direction == INVERSE:
         converted = amount / rate_decimal
     else:
         raise ValueError(f"unknown conversion direction: {path.direction!r}")
-    return converted.quantize(CONVERTED_QUANTUM, rounding=ROUND_HALF_UP)
+    return converted.quantize(
+        CONVERTED_QUANTUM, rounding=ROUND_HALF_UP, context=QUANTIZE_CONTEXT
+    )
 
 
 __all__ = [
     "CONVERTED_QUANTUM",
     "DIRECT",
     "INVERSE",
+    "QUANTIZE_CONTEXT",
     "CurrencyConversionError",
     "DenominationLookup",
     "InvalidRate",

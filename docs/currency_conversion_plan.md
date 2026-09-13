@@ -126,7 +126,7 @@ Inverse divides rather than multiplying by a computed reciprocal, so there is on
 
 ### 6. The module reports; the caller decides
 
-A conversion either produces a `CurrencyConversion` describing the arithmetic it applied, or raises a typed failure:
+A conversion either returns the converted value — with the caller reporting the arithmetic that produced it — or raises a typed failure:
 
 ```text
 no_path        -> no single-hop route between the currencies
@@ -136,21 +136,13 @@ invalid_rate   -> rate present but <= 0
 
 The module never decides to skip a value or abort a caller's operation. Whether a failure fails an entire request or drops one item is the caller's policy — `docs/fused_entity_data_plan.md` chooses to fail the request.
 
-### 7. The result carries the arithmetic, not just the number
-
-```python
-@dataclass(frozen=True)
-class CurrencyConversion:
-    value: Decimal          # converted
-    raw_value: Decimal      # original
-    from_currency_id: UUID | None   # None = PHP
-    to_currency_id: UUID | None
-    rate: Decimal           # the stored rate as observed
-    rate_entity_id: UUID    # entity the rate came from
-    direction: str          # "direct" | "inverse"
-```
+### 7. A converted value must carry the arithmetic that produced it
 
 A converted value must never be indistinguishable from one observed directly in the target currency, and its arithmetic must be reproducible from the response. Reporting the *stored* rate plus the direction is what makes it reproducible: `direct` means it was multiplied, `inverse` means it was divided.
+
+There is deliberately no shared result *dataclass*. The two consumers report different fields — a price record reports the source currency, rate, and direction once per record, while the fused response reports the raw value as well, once per contributor per day — so each projects the arithmetic into its own response shape. A single type covering both would carry fields neither consumer uses whole, which is the same reason the single-shot `convert()` below is not built.
+
+The requirement is on the response, not on a type: **no consumer may return a converted number without also disclosing the rate and direction applied.**
 
 ### 8. Rates are resolved per UTC day and batched
 
@@ -189,9 +181,9 @@ Conversion is derived at read time from existing rows. There is no materialized 
 | `currency_conversion/conversion.py` | pure: path resolution, arithmetic, precision, typed failures |
 | `currency_conversion/service.py` | `CurrencyConversionService(db)`: entity denomination lookup, rate lookup, day-keyed rate series |
 | `currency_conversion/price_records.py` | adapter: convert the records returned by `GET /api/v1/prices` |
-| `currency_conversion/__init__.py` | public exports: service, pure functions, result type, exceptions |
+| `currency_conversion/__init__.py` | public exports: service, pure functions, exceptions |
 | `libram_database/db.py` | `query_daily_last_price()` (Decision 8) |
-| `libram_types/libram_types.py` | `CurrencyConversion`, `FxPath`, `DailyPrice` |
+| `libram_types/libram_types.py` | `FxPath`, `DailyPrice` |
 | `dependencies.py` | `get_currency_conversion_service` provider |
 | `routes/prices.py` | the new `quote_currency_id` parameter and its error mapping |
 
@@ -236,7 +228,7 @@ def convert_price_records(
 
 The two lookup shapes exist for a reason. `rate_series()` is for consumers whose values are already aligned to a bucket, where one rate per bucket is the correct and honest answer. `rate_at()` is for consumers holding an actual instant, where a bucket rate would be look-ahead. Both are needed; neither is a convenience wrapper on the other.
 
-Deliberately not built: a single-shot `convert(value, from_id, to_id, at)`. Both consumers compose `resolve()` with `rate_at()` or `rate_series()` themselves, so a wrapper would be unused surface. When a point-in-time consumer appears it should return `CurrencyConversion | None`, so that identity stays `None` rather than being reported as a conversion that did nothing.
+Deliberately not built: a single-shot `convert(value, from_id, to_id, at)`. Both consumers compose `resolve()` with `rate_at()` or `rate_series()` themselves, so a wrapper would be unused surface. When a point-in-time consumer appears it should return `None` for identity and otherwise report the rate and direction it applied, so that identity is not reported as a conversion that did nothing.
 
 ## Consumer: `GET /api/v1/prices`
 
@@ -255,6 +247,8 @@ Provided: every monetary field of every returned record is converted into that c
 PHP has no entity (Decision 1), and an omitted parameter already means "do not convert", so a UUID alone cannot express "convert to PHP". The literal `PHP` is therefore accepted, case-insensitively, as the sentinel for the entity-less currency.
 
 Resolving a currency *code* instead was rejected: entity codes are unique only per datasource and two entities are named `USD`, so `quote_currency=USD` would be ambiguous by construction — precisely the ambiguity Decision 1 exists to remove.
+
+A blank value is **not** treated as PHP. An empty `quote_currency_id` is a caller bug, not a request for the entity-less currency, and it is rejected as `invalid_value` rather than silently converting. Only an omitted parameter or an explicit `PHP` means PHP.
 
 ### Reference instant
 
@@ -295,7 +289,7 @@ Converted values replace the raw ones in place; each record gains two fields:
   "timestamp_start": "2026-01-01T00:00:00Z",
   "timestamp_end": "2026-01-02T00:00:00Z",
   "currency": "PHP",
-  "conversion": { "from": "USD", "rate": "57.000000", "direction": "direct" }
+  "conversion": { "from": "USD", "rate": 57.0, "direction": "direct" }
 }
 ```
 
@@ -338,7 +332,9 @@ Converting it means converting every row before aggregating, which is a differen
 | `quote_currency_id` is neither a UUID nor `PHP` | 422 | `{"error": "invalid_value", "field": "quote_currency_id", "value": "..."}` |
 | `quote_currency_id` names no existing entity | 404 | `{"error": "entity_not_found", "entity_id": "<uuid>"}` |
 | The entity's currency has no single-hop path to the requested currency | 422 | `{"error": "fx_no_path", "from": "USDC", "to": "USD"}` |
-| A record's rate is missing or `<= 0` | 422 | `{"error": "fx_rate_unavailable", "pair": "USD", "at": "<record instant>"}` |
+| A record's rate is missing or `<= 0` | 422 | `{"error": "fx_rate_unavailable", "pair": "<rate entity code>", "at": "<record instant or null>", "reason": "<detail>"}` |
+
+Both `NoRate` and `InvalidRate` map to the single `fx_rate_unavailable` code: a client cannot act differently on a missing rate than on a non-positive one, and `reason` distinguishes them. `pair` names the rate entity's currency code and `at` is the record instant the rate was sought at, so a failure identifies which conversion broke and when.
 
 ## Errors
 
@@ -356,7 +352,7 @@ Two phases, each independently verifiable. No schema change in either.
 
 ### Phase 1: the module
 
-- Add `CurrencyConversion`, `FxPath`, and `DailyPrice` to `libram_types/libram_types.py`.
+- Add `FxPath` and `DailyPrice` to `libram_types/libram_types.py`.
 - Add `Database.query_daily_last_price()` per Decision 8.
 - Add `currency_conversion/conversion.py`: `resolve_path()` in both directions with the `direct` preference, `convert()` with the Decision 5 arithmetic, and the three exception types.
 - Add `currency_conversion/service.py` and the `dependencies.py` provider.
@@ -375,8 +371,10 @@ Two phases, each independently verifiable. No schema change in either.
 
 - **Denomination is asserted, not verified.** The invariant stated under Context — a currency entity's series is denominated in its own `currency_id` — cannot be checked at runtime. Test it against the seed graph; treat a new currency entity as requiring that check.
 - **Silent mis-scaling is the failure mode of getting this wrong.** A wrong direction or a mis-declared denomination produces a plausible number. Hence Decision 7's reproducible arithmetic and the direct-preference rule rather than guessing.
-- **Naive FX timestamps.** `ofx_forex_datasource.py:47-53` emits naive local timestamps while the rate comparison happens in PostgreSQL against a UTC bound. Verify the stored offset assumption at implementation time rather than assuming it.
-- **Uncoerced float rates.** The OFX parser stores `InterbankRate` uncoerced, which yields a float in tests. Coerce to `Decimal` before any arithmetic, not after.
+- **Naive FX timestamps are an unverified look-ahead exposure.** `ofx_forex_datasource.py:47-53` builds its timestamps with `datetime.fromtimestamp(...)`, which yields *naive host-local* time, and they are written into a `timestamptz` column. If the writing session's zone is not UTC, every stored rate instant is shifted; a shift **earlier** means `get_price_at_or_before(rate_entity, record_instant)` can select a rate whose true observation was *after* the record's instant — exactly what Decision 4 forbids. Concretely, on a `+08:00` session a rate really observed at `10:00Z` is stored as `02:00Z` and will convert a record observed at `03:00Z` using a rate from its future. Nothing in this plan detects that. **Treat the session-zone assumption as a precondition, not a detail:** confirm it against a real database before relying on converted values, and normalise the datasource to UTC or reject non-UTC sessions if it does not hold.
+- **The day-keyed read ships without a production caller.** `rate_series()` and `Database.query_daily_last_price()` exist for the fused-entity consumer, which is not implemented on this branch, so the SQL itself is exercised by no test here — the deterministic unit suite cannot reach PostgreSQL. Verify it against a real database before the fused-entity phase relies on it; until then its `DISTINCT ON`/`AT TIME ZONE 'UTC'` bucketing is reviewed, not proven.
+- **`quote_currency_id` names a denomination, not a symbol or a "currency" in the narrow sense.** Because `resolve_path()` compares ids only, *any* entity can serve as the target unit: converting a PHP value into a share-count by passing a PHP-denominated stock's entity id is arithmetically correct and labels the output with that entity's code. This is deliberate — the model's whole premise is that identity is an entity id — but it means the parameter will happily convert money into non-money units and must not be validated against a `type` column, which is itself unreliable (`USDC` is `type = 'CRYPTOCURRENCY'`). Documented rather than narrowed, because narrowing to "entities referenced as some `currency_id`" would reject a legitimately new currency that nothing references yet.
+- **Uncoerced float rates are handled, not assumed.** The OFX parser stores `InterbankRate` uncoerced, so `to_decimal()` coerces at the boundary and positivity is judged on the coerced value. Keep coercion before arithmetic, never after.
 - **No staleness bound.** Stated in Decision 4. A consumer that needs freshness must add it; nothing here will alert on a months-old rate.
 - **A missing rate fails a whole request through both consumers.** Deliberate: the fused series fails, and `/prices` fails rather than returning a page whose values are in mixed currencies. A caller wanting a best-effort page is asking for a different contract, and should say so.
 - **A converted record declares its currency; an unconverted one still does not.** `/api/v1/prices` has never said what currency its values are in — that is discoverable only from the entity. This plan does not add the field unconditionally, because doing so changes an existing response shape. The asymmetry between a converted and an unconverted page is real and worth revisiting on its own.
@@ -396,7 +394,7 @@ git diff --check
 
 Repo-wide `uv run ruff check .` and `uv run ruff format --check .` are not usable as gates and are not the commands to run. As measured on `main`, the repository carries 318 lint findings and 41 unformatted files before this plan starts — and `ruff check .` also walks `.worktrees/`, which inflates the count to roughly 6000. Lint and format the paths a change actually touches.
 
-Two `B008` findings remain in the files this plan changes. That rule fires on FastAPI's `Depends`-in-argument-defaults idiom, which the repository uses throughout and which FastAPI requires; it is not fixable without a ruff configuration this plan does not add.
+Each `Depends(...)` argument default this plan adds produces one `B008` finding — three across the changed files. That rule fires on FastAPI's dependency-injection idiom, which the repository uses throughout and FastAPI requires; it is not fixable without a ruff configuration this plan does not add.
 
 Focused tests must cover: path resolution in both directions, identity, `no_path`, direct preference, PHP on either side, both arithmetic directions, quantization, invalid rates, missing rates, the no-look-ahead boundary, and — for the `PriceRecord` adapter — point-row and OHLC-record conversion, one shared factor across a bar's fields, invariants preserved, identity returning `conversion: null`, and the record's own instant used as the reference.
 

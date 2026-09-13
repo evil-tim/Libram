@@ -175,6 +175,16 @@ def test_a_two_hop_pair_reports_no_path(client):
     }
 
 
+def test_a_blank_parameter_is_rejected(client):
+    usd, btc = usd_denominated_btc()
+    response = client({usd["id"]: usd, btc["id"]: btc}, []).get(
+        url(btc["id"], quote_currency_id="")
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "invalid_value"
+
+
 def test_a_missing_rate_fails_the_request(client):
     usd, btc = usd_denominated_btc()
     records = [PriceRecord(price=Decimal("1200.19"), timestamp=OBSERVED_AT)]
@@ -183,9 +193,26 @@ def test_a_missing_rate_fails_the_request(client):
     )
 
     assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "error": "fx_rate_unavailable",
+        "pair": "USD",
+        "at": "2026-01-01T23:59:00+00:00",
+        "reason": f"no rate for currency entity {usd['id']} at or before 2026-01-01T23:59:00+00:00",
+    }
+
+
+def test_a_non_positive_rate_is_reported_as_unavailable(client):
+    usd, btc = usd_denominated_btc()
+    records = [PriceRecord(price=Decimal("1200.19"), timestamp=OBSERVED_AT)]
+    response = client(
+        {usd["id"]: usd, btc["id"]: btc}, records, {usd["id"]: Decimal(0)}
+    ).get(url(btc["id"], quote_currency_id="PHP"))
+
+    assert response.status_code == 422
     detail = response.json()["detail"]
     assert detail["error"] == "fx_rate_unavailable"
-    assert str(usd["id"]) in detail["reason"]
+    assert detail["pair"] == "USD"
+    assert detail["at"] is None
 
 
 def test_an_ohlc_bar_converts_every_monetary_field(client):

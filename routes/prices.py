@@ -17,10 +17,30 @@ router = APIRouter()
 
 
 def _as_uuid(value: object) -> UUID | None:
-    """Coerce a stored currency id to UUID, matching the database layer's types."""
+    """Coerce a stored currency id to UUID.
+
+    The database layer returns ``uuid.UUID`` for a uuid column, but a plain
+    string would silently defeat the identity comparison in
+    ``convert_price_records`` and turn a same-currency request into a spurious
+    no-path failure, so the type is normalised here rather than assumed.
+    """
     if value is None or isinstance(value, UUID):
         return value
     return UUID(str(value))
+
+
+def _label(
+    currency_conversion: CurrencyConversionService, currency_id: UUID | None
+) -> str:
+    """Return a currency's reporting label, degrading to the id on a dangling reference.
+
+    ``currency_code`` raises for an entity that does not exist; on an error path
+    that must not become a 500.
+    """
+    try:
+        return currency_conversion.currency_code(currency_id)
+    except ValueError:
+        return str(currency_id)
 
 
 @router.get(
@@ -74,35 +94,40 @@ async def list_prices(
     start_dt = convert_to_timezone_aware(start, timezone)
     end_dt = convert_to_timezone_aware(end, timezone)
 
+    # Parse and validate the requested currency before reading any prices, so a
+    # bad parameter does not pay for a query.
+    requested_currency_id: UUID | None = None
+    if quote_currency_id is not None:
+        try:
+            requested_currency_id = parse_quote_currency(quote_currency_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "invalid_value",
+                    "field": "quote_currency_id",
+                    "value": quote_currency_id,
+                },
+            ) from exc
+
+        if (
+            requested_currency_id is not None
+            and not currency_conversion.currency_exists(requested_currency_id)
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "entity_not_found",
+                    "entity_id": str(requested_currency_id),
+                },
+            )
+
     records = price_manager.query_prices(entity_id, start_dt, end_dt, page, size)
 
     # Omitting the output currency leaves the response exactly as it was before
     # this parameter existed.
     if quote_currency_id is None:
         return records
-
-    try:
-        requested_currency_id = parse_quote_currency(quote_currency_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "invalid_value",
-                "field": "quote_currency_id",
-                "value": quote_currency_id,
-            },
-        ) from exc
-
-    if requested_currency_id is not None and not currency_conversion.currency_exists(
-        requested_currency_id
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "error": "entity_not_found",
-                "entity_id": str(requested_currency_id),
-            },
-        )
 
     source_currency_id = _as_uuid(entity.get("currency_id"))
     try:
@@ -117,19 +142,21 @@ async def list_prices(
             status_code=422,
             detail={
                 "error": "fx_no_path",
-                "from": currency_conversion.currency_code(source_currency_id),
-                "to": currency_conversion.currency_code(requested_currency_id),
+                "from": _label(currency_conversion, source_currency_id),
+                "to": _label(currency_conversion, requested_currency_id),
             },
         ) from exc
-    except InvalidRate as exc:
+    except (NoRate, InvalidRate) as exc:
         raise HTTPException(
             status_code=422,
-            detail={"error": "fx_invalid_rate", "reason": str(exc)},
-        ) from exc
-    except NoRate as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"error": "fx_rate_unavailable", "reason": str(exc)},
+            detail={
+                "error": "fx_rate_unavailable",
+                "pair": _label(currency_conversion, exc.rate_entity_id),
+                "at": exc.at.isoformat()
+                if isinstance(exc, NoRate) and exc.at is not None
+                else None,
+                "reason": str(exc),
+            },
         ) from exc
 
 
