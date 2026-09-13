@@ -1,13 +1,26 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from dependencies import get_price_manager_service
+from currency_conversion.conversion import InvalidRate, NoPath, NoRate
+from currency_conversion.price_records import (
+    convert_price_records,
+    parse_quote_currency,
+)
+from currency_conversion.service import CurrencyConversionService
+from dependencies import get_currency_conversion_service, get_price_manager_service
 from price_analysis import convert_to_timezone_aware
 from price_management.service import PriceManagerService
 
 router = APIRouter()
+
+
+def _as_uuid(value: object) -> UUID | None:
+    """Coerce a stored currency id to UUID, matching the database layer's types."""
+    if value is None or isinstance(value, UUID):
+        return value
+    return UUID(str(value))
 
 
 @router.get(
@@ -35,7 +48,21 @@ async def list_prices(
     size: Annotated[
         int, Query(description="Number of items per page, default is 10")
     ] = 10,
+    quote_currency_id: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Optional output currency. Pass a currency entity UUID, or 'PHP' for the "
+                "entity-less peso. When set, every monetary field of every returned record "
+                "is converted into that currency, and each record reports the conversion it "
+                "underwent. Omitted returns the records unconverted."
+            )
+        ),
+    ] = None,
     price_manager: PriceManagerService = Depends(get_price_manager_service),
+    currency_conversion: CurrencyConversionService = Depends(
+        get_currency_conversion_service
+    ),
 ):
     entity = price_manager.db.get_entity_by_id_raw(entity_id)
     if not entity:
@@ -47,7 +74,63 @@ async def list_prices(
     start_dt = convert_to_timezone_aware(start, timezone)
     end_dt = convert_to_timezone_aware(end, timezone)
 
-    return price_manager.query_prices(entity_id, start_dt, end_dt, page, size)
+    records = price_manager.query_prices(entity_id, start_dt, end_dt, page, size)
+
+    # Omitting the output currency leaves the response exactly as it was before
+    # this parameter existed.
+    if quote_currency_id is None:
+        return records
+
+    try:
+        requested_currency_id = parse_quote_currency(quote_currency_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_value",
+                "field": "quote_currency_id",
+                "value": quote_currency_id,
+            },
+        ) from exc
+
+    if requested_currency_id is not None and not currency_conversion.currency_exists(
+        requested_currency_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "entity_not_found",
+                "entity_id": str(requested_currency_id),
+            },
+        )
+
+    source_currency_id = _as_uuid(entity.get("currency_id"))
+    try:
+        return convert_price_records(
+            records,
+            source_currency_id,
+            requested_currency_id,
+            currency_conversion,
+        )
+    except NoPath as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "fx_no_path",
+                "from": currency_conversion.currency_code(source_currency_id),
+                "to": currency_conversion.currency_code(requested_currency_id),
+            },
+        ) from exc
+    except InvalidRate as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "fx_invalid_rate", "reason": str(exc)},
+        ) from exc
+    except NoRate as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "fx_rate_unavailable", "reason": str(exc)},
+        ) from exc
 
 
 @router.get(
