@@ -76,10 +76,11 @@ def resolve_path(
     return None
 
 
-def _as_decimal(value: object) -> Decimal:
+def to_decimal(value: object) -> Decimal:
     """Coerce a stored numeric to ``Decimal``.
 
-    The OFX source stores its rate uncoerced, so a rate can arrive as a float.
+    The OFX source stores its rate uncoerced, so a rate can arrive as a float;
+    coercion happens here, at the boundary, rather than after arithmetic.
     """
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
@@ -91,8 +92,8 @@ def convert(value: object, path: FxPath, rate: object) -> Decimal:
     single rounding step in either direction rather than an intermediate
     reciprocal.
     """
-    amount = _as_decimal(value)
-    rate_decimal = _as_decimal(rate)
+    amount = to_decimal(value)
+    rate_decimal = to_decimal(rate)
     if rate_decimal <= MINIMUM_RATE:
         raise InvalidRate(
             f"rate for currency entity {path.rate_entity_id} is not positive: {rate_decimal}"
@@ -117,4 +118,5 @@ __all__ = [
     "NoRate",
     "convert",
     "resolve_path",
+    "to_decimal",
 ]

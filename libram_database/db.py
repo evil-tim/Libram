@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from libram_types.libram_types import (
+    DailyPrice,
     DividendEventRecord,
     EntityRecord,
     PortfolioDividendRecord,
@@ -532,6 +533,43 @@ class Database:
         )
         with self.engine.begin() as conn:
             conn.execute(q, {"task_id": str(task_id)})
+
+    def query_daily_last_price(
+        self, entity_id: UUID, start: datetime, end: datetime
+    ) -> list[DailyPrice]:
+        """Fetch at most one observation per UTC calendar day in ``[start, end)``.
+
+        Each day yields that day's last observation by effective timestamp
+        (``COALESCE(timestamp, timestamp_start)``), valued at
+        ``COALESCE(close, price)``. Used wherever a series has to be reduced to
+        one point per day before it is compared or converted.
+
+        DISTINCT ON keeps the result proportional to the days requested rather
+        than the rows stored, so a year of five-minute snapshots returns at most
+        365 rows. The day label is the UTC calendar date.
+        """
+        q = text(
+            """
+            SELECT DISTINCT ON ((COALESCE(timestamp, timestamp_start) AT TIME ZONE 'UTC')::date)
+                   (COALESCE(timestamp, timestamp_start) AT TIME ZONE 'UTC')::date AS day,
+                   COALESCE(timestamp, timestamp_start) AS observed_at,
+                   COALESCE(close, price) AS value
+            FROM price
+            WHERE entity_id = :entity_id
+              AND COALESCE(close, price) IS NOT NULL
+              AND COALESCE(timestamp, timestamp_start) >= :start
+              AND COALESCE(timestamp, timestamp_start) < :end
+            ORDER BY (COALESCE(timestamp, timestamp_start) AT TIME ZONE 'UTC')::date ASC,
+                     COALESCE(timestamp, timestamp_start) DESC
+            """
+        )
+        with self.engine.connect() as conn:
+            res = conn.execute(q, {"entity_id": str(entity_id), "start": start, "end": end})
+            rows = res.mappings().all()
+        return [
+            DailyPrice(day=row["day"], observed_at=row["observed_at"], value=row["value"])
+            for row in rows
+        ]
 
     def query_close_series(self, entity_id: UUID, start: datetime, end: datetime) -> list[tuple[datetime, float]]:
         """Fetch the full ordered close/price series for an entity and date range.
