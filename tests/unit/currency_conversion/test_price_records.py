@@ -63,13 +63,13 @@ def test_parse_accepts_an_entity_uuid():
     assert parse_quote_currency(str(currency_id)) == currency_id
 
 
-@pytest.mark.parametrize("value", [None, "", "   ", "PHP", "php", " Php "])
-def test_parse_treats_omitted_blank_and_php_as_the_entity_less_currency(value):
+@pytest.mark.parametrize("value", [None, "PHP", "php", " Php "])
+def test_parse_treats_omitted_and_php_as_the_entity_less_currency(value):
     assert parse_quote_currency(value) is None
 
 
-@pytest.mark.parametrize("value", ["USD", "not-a-uuid", "12345"])
-def test_parse_rejects_codes_and_junk(value):
+@pytest.mark.parametrize("value", ["USD", "not-a-uuid", "12345", "", "   "])
+def test_parse_rejects_blank_values_codes_and_junk(value):
     with pytest.raises(ValueError):
         parse_quote_currency(value)
 
@@ -77,6 +77,13 @@ def test_parse_rejects_codes_and_junk(value):
 def test_reference_instant_uses_the_records_own_timestamp():
     assert reference_instant(point_row(at=LATE)) == LATE
     assert reference_instant(bar_row()) == UTC_DAY
+
+
+def test_reference_instant_prefers_a_point_timestamp_over_a_bar_start():
+    # COALESCE(timestamp, timestamp_start): if a row somehow carries both, the
+    # point timestamp is the effective instant.
+    record = PriceRecord(price=Decimal(1), timestamp=LATE, timestamp_start=UTC_DAY)
+    assert reference_instant(record) == LATE
 
 
 def test_point_row_price_is_converted_and_the_arithmetic_is_reported():
@@ -165,29 +172,51 @@ def test_no_path_is_raised_when_the_pair_has_no_single_hop_route():
         convert_price_records([point_row()], usdc, usd, fx)
 
 
-def test_missing_and_invalid_rates_propagate():
+def test_missing_and_invalid_rates_propagate_with_their_context():
     usd = uuid4()
     path = FxPath(rate_entity_id=usd, direction=DIRECT)
-    with pytest.raises(NoRate):
+    with pytest.raises(NoRate) as caught:
         convert_price_records(
             [point_row()],
             usd,
             None,
-            FakeConversionService(path=path, error=NoRate("gone")),
+            FakeConversionService(path=path, error=NoRate(usd, LATE)),
         )
-    with pytest.raises(InvalidRate):
+    # The caller needs to report which pair failed and at what instant.
+    assert caught.value.rate_entity_id == usd
+    assert caught.value.at == LATE
+
+    with pytest.raises(InvalidRate) as invalid:
         convert_price_records(
             [point_row()], usd, None, FakeConversionService(path=path, rate=Decimal(0))
         )
+    assert invalid.value.rate_entity_id == usd
 
 
-def test_an_empty_page_still_serialises_to_an_empty_list():
+def test_an_empty_page_needs_no_rate_lookup():
     usd = uuid4()
     fx = FakeConversionService(
         path=FxPath(rate_entity_id=usd, direction=DIRECT),
         codes={usd: "USD"},
     )
     assert convert_price_records([], usd, None, fx) == []
+    assert fx.instants == []
+
+
+def test_an_empty_page_with_no_path_still_reports_the_path_failure():
+    usdc, usd = uuid4(), uuid4()
+    fx = FakeConversionService(path=None, codes={usdc: "USDC", usd: "USD"})
+    with pytest.raises(NoPath):
+        convert_price_records([], usdc, usd, fx)
+
+
+def test_a_record_without_a_timestamp_cannot_be_converted():
+    usd = uuid4()
+    fx = FakeConversionService(
+        path=FxPath(rate_entity_id=usd, direction=DIRECT), codes={usd: "USD"}
+    )
+    with pytest.raises(NoRate):
+        convert_price_records([PriceRecord(price=Decimal(1))], usd, None, fx)
 
 
 def test_parsing_returns_a_uuid_instance():

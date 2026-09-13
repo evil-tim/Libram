@@ -10,9 +10,16 @@ from currency_conversion.conversion import DIRECT, INVERSE, NoRate
 from currency_conversion.service import PHP, CurrencyConversionService
 from libram_types.libram_types import DailyPrice, FxPath
 
+OBSERVED_AT = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
 
 class FakeDatabase:
-    """Minimal stand-in for ``Database`` covering the methods the service uses."""
+    """Stand-in for ``Database`` that reproduces the rate lookup's real semantics.
+
+    ``get_price_at_or_before`` returns the most recent observation at or before
+    the requested instant, so the no-look-ahead rule is genuinely exercised
+    rather than assumed.
+    """
 
     def __init__(self, entities=None, rates=None, series=None):
         self.entities = entities or {}
@@ -23,7 +30,14 @@ class FakeDatabase:
         return self.entities.get(entity_id)
 
     def get_price_at_or_before(self, entity_id: UUID, target: datetime):
-        return self.rates.get(entity_id)
+        eligible = [
+            (observed_at, value)
+            for observed_at, value in self.rates.get(entity_id, [])
+            if observed_at <= target
+        ]
+        if not eligible:
+            return None
+        return max(eligible, key=lambda pair: pair[0])[1]
 
     def query_daily_last_price(self, entity_id: UUID, start: datetime, end: datetime):
         return self.series.get(entity_id, [])
@@ -97,17 +111,39 @@ def test_currency_code_rejects_an_unknown_entity():
 
 def test_rate_at_returns_the_stored_rate_and_coerces_it():
     usd = uuid4()
-    fx = service(rates={usd: Decimal("57.25")})
-    assert fx.rate_at(usd, datetime(2026, 1, 1, tzinfo=UTC)) == Decimal("57.25")
+    fx = service(rates={usd: [(OBSERVED_AT, Decimal("57.25"))]})
+    assert fx.rate_at(usd, datetime(2026, 1, 1, 13, 0, tzinfo=UTC)) == Decimal("57.25")
 
-    fx = service(rates={usd: 57.25})
-    assert fx.rate_at(usd, datetime(2026, 1, 1, tzinfo=UTC)) == Decimal("57.25")
+    # The OFX source stores its rate uncoerced, so a float can arrive.
+    fx = service(rates={usd: [(OBSERVED_AT, 57.25)]})
+    assert fx.rate_at(usd, datetime(2026, 1, 1, 13, 0, tzinfo=UTC)) == Decimal("57.25")
+
+
+def test_rate_at_never_borrows_a_later_rate():
+    usd = uuid4()
+    earlier = Decimal(56)
+    later = Decimal(58)
+    fx = service(
+        rates={
+            usd: [
+                (datetime(2026, 1, 1, 10, 0, tzinfo=UTC), earlier),
+                (datetime(2026, 1, 1, 12, 0, tzinfo=UTC), later),
+            ]
+        }
+    )
+    # An instant between the two observations takes the earlier one, not the next.
+    assert fx.rate_at(usd, datetime(2026, 1, 1, 11, 0, tzinfo=UTC)) == earlier
+    assert fx.rate_at(usd, datetime(2026, 1, 1, 12, 0, tzinfo=UTC)) == later
 
 
 def test_rate_at_raises_when_no_rate_precedes_the_instant():
-    fx = service()
-    with pytest.raises(NoRate):
-        fx.rate_at(uuid4(), datetime(2026, 1, 1, tzinfo=UTC))
+    usd = uuid4()
+    fx = service(rates={usd: [(OBSERVED_AT, Decimal(57))]})
+    with pytest.raises(NoRate) as caught:
+        fx.rate_at(usd, datetime(2026, 1, 1, 11, 0, tzinfo=UTC))
+    # The failure carries what the caller needs to report it.
+    assert caught.value.rate_entity_id == usd
+    assert caught.value.at == datetime(2026, 1, 1, 11, 0, tzinfo=UTC)
 
 
 def test_rate_series_is_keyed_by_utc_day():

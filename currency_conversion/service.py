@@ -64,13 +64,12 @@ class CurrencyConversionService:
         """Return the rate observed at or before ``at``.
 
         Raises :class:`NoRate` when the series has no observation at or before the
-        instant. A rate is never borrowed from after the reference instant.
+        instant. A rate is never borrowed from after the reference instant, which
+        is the whole point of passing the instant rather than a day.
         """
         rate = self.db.get_price_at_or_before(rate_entity_id, at)
         if rate is None:
-            raise NoRate(
-                f"no rate for currency entity {rate_entity_id} at or before {at.isoformat()}"
-            )
+            raise NoRate(rate_entity_id, at)
         return to_decimal(rate)
 
     def rate_series(

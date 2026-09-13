@@ -282,7 +282,7 @@ That is the whole algorithm. It exists as one small function so it can be tested
 }
 ```
 
-- `value` is in the group's output currency, in both `bars` and `sources`. `converted_from` is the currency module's `CurrencyConversion` reduced to its reportable fields — raw value, its currency, the stored rate, and the direction it was applied in (`direct` multiplies, `inverse` divides) — so a converted contribution is never indistinguishable from a directly observed one and its arithmetic is reproducible. It is `null` when no conversion applied.
+- `value` is in the group's output currency, in both `bars` and `sources`. `converted_from` projects the arithmetic the currency module applied — raw value, its currency, the stored rate, and the direction it was applied in (`direct` multiplies, `inverse` divides) — so a converted contribution is never indistinguishable from a directly observed one and its arithmetic is reproducible. It is `null` when no conversion applied.
 - `group.currency` is the output currency code, `PHP` when `quote_currency_id` is `NULL`.
 - `sources` is ordered by `entity_code`, then `datasource`. It *is* the contributor count.
 - `members` is a request-level rollup of membership resolution: what was admitted, what was not, and the single reason code that matters (`weak_member_excluded_by_strong_mode`).

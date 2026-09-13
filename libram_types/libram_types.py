@@ -136,21 +136,3 @@ class FxPath:
 
     rate_entity_id: UUID
     direction: str
-
-
-@dataclass(frozen=True)
-class CurrencyConversion:
-    """A converted value together with the arithmetic that produced it.
-
-    Carries the raw value, the stored rate, and the direction it was applied in,
-    so a converted value is never indistinguishable from one observed directly
-    in the target currency and its arithmetic is reproducible.
-    """
-
-    value: Decimal
-    raw_value: Decimal
-    from_currency_id: UUID | None
-    to_currency_id: UUID | None
-    rate: Decimal
-    rate_entity_id: UUID
-    direction: str

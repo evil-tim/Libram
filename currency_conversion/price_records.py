@@ -27,8 +27,9 @@ MONETARY_FIELDS = ("price", "open", "high", "low", "close")
 def parse_quote_currency(value: str | None) -> UUID | None:
     """Parse the ``quote_currency_id`` request parameter.
 
-    Returns ``None`` for an omitted, blank, or ``PHP`` value, a UUID for a
-    currency entity, and raises ``ValueError`` for anything else.
+    Returns ``None`` for an omitted parameter or the ``PHP`` sentinel, a UUID for
+    a currency entity, and raises ``ValueError`` for anything else -- including a
+    blank value, which is a caller bug rather than a request for PHP.
 
     A currency *code* is deliberately not accepted, even though it reads
     naturally: codes are unique only per datasource and two entities are named
@@ -37,8 +38,6 @@ def parse_quote_currency(value: str | None) -> UUID | None:
     if value is None:
         return None
     text = value.strip()
-    if not text:
-        return None
     if text.upper() == PHP_SENTINEL:
         return None
     try:
@@ -95,7 +94,11 @@ def convert_price_records(
         if path is not None:
             at = reference_instant(record)
             if at is None:
-                raise NoRate("price record has no timestamp to value a conversion at")
+                raise NoRate(
+                    path.rate_entity_id,
+                    None,
+                    message="price record has no timestamp to value a conversion at",
+                )
             rate = fx.rate_at(path.rate_entity_id, at)
             for field in MONETARY_FIELDS:
                 if payload[field] is not None:
