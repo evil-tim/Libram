@@ -250,7 +250,9 @@ def test_monthly_ceiling_before_the_floor_creates_nothing(monkeypatch):
     )
 
     # the ceiling's month ends 2026-07-01, before the floor, so the existing
-    # stop-date break fires on the first window
+    # stop-date break fires on the first window. An inverted pair like this one
+    # is rejected by chk_entity_timestamp_bounds, so the state is unreachable
+    # through the database; this pins the generator's own guard.
     assert created == []
     assert manager.price_queries == []
 

@@ -47,7 +47,7 @@ Out of scope:
 
 ## Decisions
 
-1. **`max_timestamp` is nullable, and `NULL` means unbounded.** The default for all 79 seeded entities is `NULL`, so every current behaviour is preserved without a data migration.
+1. **`max_timestamp` is nullable, and `NULL` means unbounded.** The default for all 68 seeded entities is `NULL`, so every current behaviour is preserved without a data migration.
 2. **Semantics: the latest timestamp for which price data can exist for this entity.** The mirror of `min_timestamp`, and read the same way — a scan bound, not a data filter.
 3. **One enforcement rule: clamp the scan anchor.** In each generator, immediately after the scan anchor is computed: `scan = min(scan, max_timestamp.astimezone(now.tzinfo))` when the ceiling is set. Task bounds handed to `create_new_task()` are never clamped or rewritten.
 4. **Window granularity, not instants.** Eligibility is decided by a window's own bounds, and the window *containing* the ceiling is admitted whole. This is what `min_timestamp` already does: `if month_end.date() < stop_date: break` (`service.py:128`) admits the month that straddles the floor in full, and compares calendar dates rather than instants.
@@ -55,6 +55,7 @@ Out of scope:
 6. **The value is set the way `min_timestamp` is set: seed/SQL.** No new write endpoint in this change.
 7. **Read exposure is free.** `routes/entities.py` returns `EntityRecord` objects directly (`routes/entities.py:32`), so adding the field to the dataclass publishes it in both the REST and MCP surfaces with no route change.
 8. **No new index.** The ceiling is read once per entity in Python during a scan; it is never a SQL predicate.
+9. **The bounds are enforced by the database, not just by convention.** `chk_entity_timestamp_bounds` rejects a row whose `min_timestamp` is after its `max_timestamp`. This is the same move as enforcing cross-currency compatibility at write time: the one silent failure mode this feature had becomes a rejected write. It costs nothing, because no runtime code writes to `entity` (Decision 6), so there is nothing to trip over it.
 
 ## Schema
 
@@ -66,11 +67,22 @@ Append immediately after the `entity` `CREATE TABLE` (`schema.sql:35`):
 -- the task generators, not a filter on stored prices.
 ALTER TABLE entity
     ADD COLUMN IF NOT EXISTS max_timestamp timestamptz;
+-- Availability bounds must not cross (Decision 9).
+ALTER TABLE entity
+    DROP CONSTRAINT IF EXISTS chk_entity_timestamp_bounds;
+ALTER TABLE entity
+    ADD CONSTRAINT chk_entity_timestamp_bounds CHECK (
+        min_timestamp IS NULL
+        OR max_timestamp IS NULL
+        OR min_timestamp <= max_timestamp
+    );
 ```
 
 The `ALTER` is required, not cosmetic: `CREATE TABLE IF NOT EXISTS` cannot add a column to a database that already has `entity`, and `init_db()` only replays `schema.sql` through `conn.execute(text(ddl))` (`libram_database/db.py:37-45`). The repository already uses this pattern to add a column idempotently — `ALTER TABLE portfolio ADD COLUMN IF NOT EXISTS description` (`schema.sql:175-176`).
 
 `data.sql`'s entity `INSERT` (`:14`) names its columns explicitly and does **not** include `max_timestamp`, so it keeps working unchanged.
+
+The constraint needs a named `DROP CONSTRAINT IF EXISTS` / `ADD CONSTRAINT` pair rather than a plain `ADD`, because PostgreSQL has no `ADD CONSTRAINT IF NOT EXISTS` and `schema.sql` has to stay replay-safe. Naming it is part of the same requirement; every other `CHECK` in the file is anonymous because it sits inside a `CREATE TABLE` that runs once. Its null-tolerance mirrors the price table's existing interval-bounds check (`schema.sql:79-83`), with one deliberate difference: equality is permitted here, since a single-observation entity is legitimate, whereas an interval must have positive duration.
 
 ### Type
 
@@ -174,7 +186,7 @@ This is the only observability the feature has: nothing logs or reports "this en
 
 ## Seed data
 
-Append to `data.sql` — a separate idempotent statement rather than a new column in the 79-row multi-row `INSERT`, which would require editing every `VALUES` tuple:
+Append to `data.sql` — a separate idempotent statement rather than a new column in the 68-row entity seed (7 multi-row `INSERT` statements), which would require editing every `VALUES` tuple:
 
 ```sql
 -- RRHI voluntarily delisted from the PSE (delisting effective 2026-08-31).
@@ -189,7 +201,7 @@ UPDATE public.entity
 
 The time-of-day component is inert under Decision 4, since eligibility compares calendar dates in the entity's timezone; `'2026-07-11 00:00:00+08'` would behave identically. `2026-07-10 00:00:00+08` is written because it is the `timestamp_start` of the last bar PSE Edge serves, which mirrors how `min_timestamp` records the first bar's start (`'2013-11-11 00:00:00+08'`, `data.sql:67`).
 
-**The value is an operator assertion, not something this feature derives or verifies.** It is the last date PSE Edge serves for `cmpy_id=646`; the delisting article does not state a last trading day — it reports the block crossing on 13 July, suspension after the crossing, index removal on 16 July, and delisting effective 31 August. If the ceiling is re-derived later, re-check it against the live source.
+**The value is an operator assertion, not something this feature derives or verifies.** It is the last date PSE Edge serves for `cmpy_id=646`; the delisting article does not state a last trading day — it reports the block crossing on 13 July, suspension after the crossing, index removal on 16 July, and delisting effective 31 August. If the ceiling is re-derived later, re-check it against the live source. The pair it produces (`2013-11-11` → `2026-07-10`) satisfies `chk_entity_timestamp_bounds`, and the other 67 seeded entities leave `max_timestamp` NULL, so the constraint applies to this seed unchanged. Checked by replaying the seed through a SQL parser and evaluating the predicate — 68 entity rows, 1 touched by the `UPDATE`, 0 violations — because no database is available here.
 
 ## Implementation phases
 
@@ -200,6 +212,8 @@ Each phase is one commit.
 **Phase 2 — enforcement.** The three clamps in `price_scheduler/service.py` (`:176`, `:232`, `:108`), plus the new tests below. Verify: `uv run pytest tests/unit/price_scheduler -q`.
 
 **Phase 3 — seed.** The `UPDATE` in `data.sql`. Verify: the appended statement is a bare `UPDATE`, so re-running it leaves `max_timestamp` at the same value. Replaying *all* of `data.sql` is a different matter and is not replay-safe — its seed `INSERT`s carry explicit primary keys with no `ON CONFLICT` clause, so a second run collides on the first row (pre-existing, unchanged here). Apply the `UPDATE` on its own against an existing database. Requires a PostgreSQL instance; this is an operator step, not a test-suite step.
+
+**Phase 4 — the bounds constraint.** `chk_entity_timestamp_bounds` in `schema.sql`, plus the test comment recording why the inverted-pair case is no longer reachable. Verify: `schema.sql` parses; the drop-then-add pair is replay-safe; on an existing database the pre-check query above returns no rows and the constraint is present afterwards. Requires a PostgreSQL instance; an operator step, not a test-suite step.
 
 ## Risks and safeguards
 
@@ -218,7 +232,9 @@ Each phase is one commit.
 
 - **A wrong ceiling fails silently.** Nothing reports that an entity is capped. `GET /api/v1/entities` carrying the field is the only signal, and no new logging is added. A ceiling set too late is mostly harmless — once it is in the past, the daily and weekly generators are already bounded near `now` and produce nothing, and the monthly generator's window is month-granular — so the recoverable error is limited to the delisting month itself.
 
-- **`min_timestamp > max_timestamp` goes quiet instead of erroring, with one exception.** The monthly loop's existing `break` on `month_end.date() < stop_date` (`price_scheduler/service.py`, `generate_monthly_tasks`) fires once the clamped scan walks past the floor, so nothing is generated — pinned by `test_monthly_ceiling_before_the_floor_creates_nothing`. The exception, found while implementing that test: the comparison is `<`, so a ceiling in the month immediately before the floor's month is admitted and creates a task whose window ends exactly on the floor and cannot yield data. Accepted either way; adding a validation channel for an operator-set pair is a larger change than the bound itself.
+- **An inverted pair is now rejected at write time instead of going quiet.** `chk_entity_timestamp_bounds` (Decision 9) refuses `min_timestamp > max_timestamp`, which closes both the silent "generators go quiet" behaviour and the abutting-window exception found while implementing `test_monthly_ceiling_before_the_floor_creates_nothing` — every case that produced either one requires `max_timestamp < min_timestamp`. That test now pins the generators' own defensive handling rather than a reachable state, since the pair it builds exists only in memory. **The cost is a deployment step:** applying the constraint to a database that already holds a violating row fails, and because `init_db()` replays the file inside one transaction that failure aborts the whole schema application. Check first —
+  `SELECT id, code, min_timestamp, max_timestamp FROM entity WHERE min_timestamp IS NOT NULL AND max_timestamp IS NOT NULL AND min_timestamp > max_timestamp;`
+  Only RRHI carries a ceiling today and it satisfies the constraint, so no rows are expected — see Seed data for the mechanical check.
 
 - **Set the ceiling by datasource, not by code alone.** `entity.code` is unique only per datasource (`UNIQUE (datasource_id, code)`, `schema.sql:34`), and `query_entities()` / `get_entity_by_code_raw()` filter on `code` with no datasource scope (`db.py:67-76`, `:84`) — a pre-existing ambiguity that a code-only `UPDATE` would silently inherit.
 
@@ -256,7 +272,7 @@ No implementation, migration, or seed change ships with this document. Phase 1 i
 
 ## Repository references
 
-Line numbers are verified against this plan's base, `main` at `0934a87`, before any of it was implemented. They shift on other checkouts — `feat/entity-groups` alone reformats `libram_database/db.py` and `server.py` (671 insertions, 130 deletions in `db.py`), so re-check the anchors when reading this from a different worktree. They also shift as the phases land on this branch: Phase 1 inserted one line in `libram_types.py` (`:21`) and one in `libram_database/db.py` (`:112`), and Phase 2 inserted three per generator in `price_scheduler/service.py` (`:109`, `:180`, `:239`), so every anchor below those points moves down by one or three. The symbol names are the stable part of each reference; the numbers describe base `0934a87`.
+Line numbers are verified against this plan's base, `main` at `0934a87`, before any of it was implemented. They shift on other checkouts — `feat/entity-groups` alone reformats `libram_database/db.py` and `server.py` (671 insertions, 130 deletions in `db.py`), so re-check the anchors when reading this from a different worktree. They also shift as the phases land on this branch: Phase 1 inserted one line in `libram_types.py` (`:21`) and one in `libram_database/db.py` (`:112`); Phase 2 inserted three per generator in `price_scheduler/service.py` (`:109`, `:180`, `:239`); and Phases 1 and 4 together inserted 21 lines in `schema.sql` (`:36`), which moves the price table's interval-bounds check and the `portfolio` ALTER precedent down with them. Every anchor below those points moves down accordingly. The symbol names are the stable part of each reference; the numbers describe base `0934a87`.
 
 - `schema.sql` — `entity` (`:19-35`), `min_timestamp` (`:32`), uniqueness per datasource (`:34`), `task` (`:83-98`), the `ALTER ... ADD COLUMN IF NOT EXISTS` precedent (`:175-176`).
 - `data.sql` — entity `INSERT` column list and RRHI row (`:14`, `:67`); PSE Edge datasource `77796ac5-b6c4-459f-be29-9248c48744d4`.
