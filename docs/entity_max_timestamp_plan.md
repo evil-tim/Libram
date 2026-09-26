@@ -199,7 +199,7 @@ Each phase is one commit.
 
 **Phase 2 — enforcement.** The three clamps in `price_scheduler/service.py` (`:176`, `:232`, `:108`), plus the new tests below. Verify: `uv run pytest tests/unit/price_scheduler -q`.
 
-**Phase 3 — seed.** The `UPDATE` in `data.sql`. Verify: replaying `data.sql` twice is idempotent and leaves `max_timestamp` at the same value. Requires a PostgreSQL instance; this is an operator step, not a test-suite step.
+**Phase 3 — seed.** The `UPDATE` in `data.sql`. Verify: the appended statement is a bare `UPDATE`, so re-running it leaves `max_timestamp` at the same value. Replaying *all* of `data.sql` is a different matter and is not replay-safe — its seed `INSERT`s carry explicit primary keys with no `ON CONFLICT` clause, so a second run collides on the first row (pre-existing, unchanged here). Apply the `UPDATE` on its own against an existing database. Requires a PostgreSQL instance; this is an operator step, not a test-suite step.
 
 ## Risks and safeguards
 
