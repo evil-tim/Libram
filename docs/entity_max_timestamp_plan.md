@@ -224,12 +224,6 @@ Each phase is one commit.
 
 - **Container zone database is defective, so do not write tz tests through `ZoneInfo('UTC')`.** Verified in this environment: `/usr/share/zoneinfo/UTC` → `Etc/UTC` → `Etc/Universal` all report `utcoffset(2026-07-10) = 8:00:00`, `TZ=UTC date` prints `PST`, while `date -u` and `datetime.timezone.utc` are correct. Python `zoneinfo` has no `tzdata` fallback package installed, so `ZoneInfo('UTC')` is wrong here, and the seeded USD entity uses `timezone='Etc/Universal'` (`data.sql`). This is a host precondition, not something this feature fixes: the clamp uses `now.tzinfo` on both sides, so it stays internally consistent whatever the offset is. Build ceiling-test instants through the entity's own zone or `datetime.timezone.utc`, never through `ZoneInfo('UTC')`.
 
-## Open decisions
-
-Nothing blocks implementation. One choice to confirm before Phase 1, because it changes that phase's surface:
-
-- **Is seed/SQL an acceptable write path for the ceiling (Decision 6)?** The alternative — an entity-metadata update endpoint and service method — would be the first write surface over `entity` at all, covering `min_timestamp` at the same time. Recommended: keep it out of this change; the trigger is a one-off delisting event, and the value is operator data.
-
 ## Verification
 
 ```bash
