@@ -109,6 +109,7 @@ class Database:
                     has_weekend=bool(r.get("has_weekend")) if r.get("has_weekend") else False,
                     timezone=r.get("timezone"),
                     min_timestamp=r.get("min_timestamp"),
+                    max_timestamp=r.get("max_timestamp"),
                 )
             )
         return out

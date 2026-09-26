@@ -236,6 +236,10 @@ git diff --check
 
 Repo-wide `uv run ruff check .` and `uv run ruff format --check .` are not usable as gates: `main` already carries 318 lint findings and 41 unformatted files, and `ruff check .` also walks `.worktrees/`. Lint the paths a change touches, as `AGENTS.md` and `docs/fused_entity_data_plan.md` both note.
 
+Scoping to the touched paths is not a gate that passes either, because those paths carry their own baseline. Measured on this plan's base (`main` @ `0934a87`), `ruff check price_scheduler libram_database/db.py libram_types` reports **110 findings, 95 auto-fixable, dominated by 93 × `UP045`** (`Optional[X]` → `X | None`), and `ruff format --check` on the same paths reports **5 files would be reformatted**. The operative rule is therefore the *delta*, not a clean run: no new findings and no new format drift on the lines a change touches.
+
+For reference, Phase 1 adds exactly one finding — `UP045` on the new `max_timestamp: Optional[datetime] = None` (95 findings at HEAD → 96 after, 89 → 90 fixable, both measured). That is deliberate: it mirrors the adjacent `min_timestamp` line and matches all 60 `Optional[...]` annotations in `libram_types.py`, which contains no `X | None` at all. `datetime | None` on that one line would clear the finding at the cost of a lone modern annotation sitting directly beneath its own mirror; the mirror wins, and the file's wholesale `Optional` cleanup is the `feat/entity-groups` refactor's job, not this feature's.
+
 New tests belong in `tests/unit/price_scheduler/test_scheduler_service.py`, using the existing `StrictManagerSpy` / `StrictDbSpy` fakes and the `FixedDateTime` monkeypatch that file already establishes. All are unit tests — deterministic, no PostgreSQL, no network, per `AGENTS.md:231` and `:252-266`. Required cases:
 
 1. **Regression guard.** The three existing tests pass unchanged with `max_timestamp=None` (the `EntityRecord` default), pinning that a NULL ceiling is a no-op.
