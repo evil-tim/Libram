@@ -92,3 +92,16 @@ INSERT INTO public.snapshot_state (entity_id,enabled,interval_seconds,next_due_a
     ('68d176d4-2ed7-4906-a2f0-b825c4cf9d2c'::uuid,true,300,'2026-08-30 13:58:53.915283+08',NULL,NULL,NULL,0,0,NULL,NULL,NULL,NULL,NULL,NULL,'2026-08-24 17:54:41.618885+08','2026-08-30 13:53:53.915283+08'),
     ('4967e268-f790-46ec-ab4d-f7406349c0e5'::uuid,true,300,'2026-08-30 13:59:04.362832+08',NULL,NULL,NULL,0,0,NULL,NULL,NULL,NULL,NULL,NULL,'2026-08-24 16:46:04.505856+08','2026-08-30 13:54:04.362832+08'),
     ('e0b2d39e-98b5-4ff9-a2c3-18dff93043fe'::uuid,true,300,'2026-08-30 13:57:12.397218+08',NULL,NULL,NULL,0,0,NULL,NULL,NULL,NULL,NULL,NULL,'2026-08-28 09:04:14.435417+08','2026-08-30 13:52:12.397218+08');
+
+-- RRHI voluntarily delisted from the PSE (delisting effective 2026-08-31), and
+-- PSE Edge chart data for cmpy_id 646 ends 2026-07-10. Set the availability
+-- ceiling so no fetch task is generated for time after the last observation.
+-- Scoped by datasource_id because entity.code is unique only per datasource
+-- (UNIQUE (datasource_id, code), schema.sql:34).
+-- This is a bare UPDATE, so it is safe to re-run on its own. Note that data.sql
+-- as a whole is not replay-safe: the seed INSERTs above carry explicit primary
+-- keys and have no ON CONFLICT clause.
+UPDATE public.entity
+   SET max_timestamp = '2026-07-10 00:00:00+08'
+ WHERE code = 'RRHI'
+   AND datasource_id = '77796ac5-b6c4-459f-be29-9248c48744d4'::uuid;
