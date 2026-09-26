@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS entity (
 -- this is an ALTER rather than a column in the CREATE above.
 ALTER TABLE entity
     ADD COLUMN IF NOT EXISTS max_timestamp timestamptz;
+-- Availability bounds must not cross: a ceiling below the floor makes the task
+-- generators go quiet with no error, so reject it at write time instead.
+-- Equality is allowed - a single-observation entity is legitimate.
+-- Named, and dropped before being added, because PostgreSQL has no
+-- ADD CONSTRAINT IF NOT EXISTS and this file must stay replay-safe. Every other
+-- CHECK here is anonymous because it lives in a CREATE TABLE applied once.
+ALTER TABLE entity
+    DROP CONSTRAINT IF EXISTS chk_entity_timestamp_bounds;
+ALTER TABLE entity
+    ADD CONSTRAINT chk_entity_timestamp_bounds CHECK (
+        min_timestamp IS NULL
+        OR max_timestamp IS NULL
+        OR min_timestamp <= max_timestamp
+    );
 -- price
 -- Stores price data for a financial entity at a specific timestamp.
 -- Each price record is associated with an entity, and contains the price and/or
