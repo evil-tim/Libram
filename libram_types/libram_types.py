@@ -136,3 +136,54 @@ class FxPath:
 
     rate_entity_id: UUID
     direction: str
+
+
+# ---------------------------------------------------------------------------
+# entity groups (fused entity data)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class EntityGroupRecord:
+    """A named fusion context: one top-level entity assembled from several sources.
+
+    ``quote_currency_id`` is the output currency for fused values; ``None`` means
+    PHP, matching ``entity.currency_id``.
+    """
+
+    id: UUID
+    code: str
+    name: str
+    description: Optional[str] = None
+    quote_currency_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class EntityGroupMemberRecord:
+    """Explicit membership of one source entity in one group.
+
+    ``strength`` is ``strong`` (the actual reference) or ``weak`` (a derivative or
+    wrapped representation of it).
+    """
+
+    group_id: UUID
+    entity_id: UUID
+    strength: str
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class EntityGroupMemberDetail:
+    """A member joined to the entity it names, for responses.
+
+    ``code`` is unique only per datasource, so a member reference always pairs
+    ``entity_code`` with ``datasource``.
+    """
+
+    entity_id: UUID
+    entity_code: str
+    datasource: str
+    strength: str
+    created_at: Optional[datetime] = None
