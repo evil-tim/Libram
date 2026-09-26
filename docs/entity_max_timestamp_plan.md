@@ -218,7 +218,7 @@ Each phase is one commit.
 
 - **A wrong ceiling fails silently.** Nothing reports that an entity is capped. `GET /api/v1/entities` carrying the field is the only signal, and no new logging is added. A ceiling set too late is mostly harmless — once it is in the past, the daily and weekly generators are already bounded near `now` and produce nothing, and the monthly generator's window is month-granular — so the recoverable error is limited to the delisting month itself.
 
-- **`min_timestamp > max_timestamp` produces no tasks and no warning.** The monthly loop's existing `break` on `month_end.date() < stop_date` (`service.py:128-129`) fires once the clamped scan walks past the floor, so the entity goes quiet. Accepted: adding a validation channel for an operator-set pair is a larger change than the bound itself.
+- **`min_timestamp > max_timestamp` goes quiet instead of erroring, with one exception.** The monthly loop's existing `break` on `month_end.date() < stop_date` (`price_scheduler/service.py`, `generate_monthly_tasks`) fires once the clamped scan walks past the floor, so nothing is generated — pinned by `test_monthly_ceiling_before_the_floor_creates_nothing`. The exception, found while implementing that test: the comparison is `<`, so a ceiling in the month immediately before the floor's month is admitted and creates a task whose window ends exactly on the floor and cannot yield data. Accepted either way; adding a validation channel for an operator-set pair is a larger change than the bound itself.
 
 - **Set the ceiling by datasource, not by code alone.** `entity.code` is unique only per datasource (`UNIQUE (datasource_id, code)`, `schema.sql:34`), and `query_entities()` / `get_entity_by_code_raw()` filter on `code` with no datasource scope (`db.py:67-76`, `:84`) — a pre-existing ambiguity that a code-only `UPDATE` would silently inherit.
 
@@ -256,7 +256,7 @@ No implementation, migration, or seed change ships with this document. Phase 1 i
 
 ## Repository references
 
-Line numbers are verified against this plan's base, `main` at `0934a87`. They shift on other checkouts — `feat/entity-groups` alone reformats `libram_database/db.py` and `server.py` (671 insertions, 130 deletions in `db.py`), so re-check the anchors when reading this from a different worktree.
+Line numbers are verified against this plan's base, `main` at `0934a87`, before any of it was implemented. They shift on other checkouts — `feat/entity-groups` alone reformats `libram_database/db.py` and `server.py` (671 insertions, 130 deletions in `db.py`), so re-check the anchors when reading this from a different worktree. They also shift as the phases land on this branch: Phase 1 inserted one line in `libram_types.py` (`:21`) and one in `libram_database/db.py` (`:112`), and Phase 2 inserted three per generator in `price_scheduler/service.py` (`:109`, `:180`, `:239`), so every anchor below those points moves down by one or three. The symbol names are the stable part of each reference; the numbers describe base `0934a87`.
 
 - `schema.sql` — `entity` (`:19-35`), `min_timestamp` (`:32`), uniqueness per datasource (`:34`), `task` (`:83-98`), the `ALTER ... ADD COLUMN IF NOT EXISTS` precedent (`:175-176`).
 - `data.sql` — entity `INSERT` column list and RRHI row (`:14`, `:67`); PSE Edge datasource `77796ac5-b6c4-459f-be29-9248c48744d4`.

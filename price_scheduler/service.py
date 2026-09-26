@@ -106,6 +106,9 @@ class PriceSchedulerService:
             # fail fast if the entity has an invalid timezone configured
             now = datetime.now(ZoneInfo(entity.timezone) if entity.timezone else None)
             scan = _prev_month(now)
+            # never scan a window that starts after the entity's availability ceiling
+            if entity.max_timestamp is not None:
+                scan = min(scan, entity.max_timestamp.astimezone(now.tzinfo))
 
             # determine the stop date for scanning
             stop_date = min_date or entity.min_timestamp
@@ -174,6 +177,9 @@ class PriceSchedulerService:
             now = datetime.now(ZoneInfo(entity.timezone) if entity.timezone else None)
             # Start from yesterday and scan back through the previous week
             scan = now - timedelta(days=1)
+            # never scan a window that starts after the entity's availability ceiling
+            if entity.max_timestamp is not None:
+                scan = min(scan, entity.max_timestamp.astimezone(now.tzinfo))
             week_cutoff = now - timedelta(days=now.weekday() + 7)  # Previous Monday
 
             print(f"{datetime.now().isoformat()} : Scanning entity {entity.name} ({entity.code}) - {entity.id} for missing daily prices from {week_cutoff.date()} to {scan.date()}")
@@ -230,6 +236,9 @@ class PriceSchedulerService:
             # get the previous week range as a starting point for scanning
             now = datetime.now(ZoneInfo(entity.timezone) if entity.timezone else None)
             scan = _prev_week(now)
+            # never scan a window that starts after the entity's availability ceiling
+            if entity.max_timestamp is not None:
+                scan = min(scan, entity.max_timestamp.astimezone(now.tzinfo))
 
             # determine the stop date for scanning (previous month)
             month_ago = now - timedelta(days=30)
