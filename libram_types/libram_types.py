@@ -18,6 +18,7 @@ class EntityRecord:
     has_weekend: bool = False
     timezone: Optional[str] = None
     min_timestamp: Optional[datetime] = None
+    max_timestamp: Optional[datetime] = None
 
 
 @dataclass

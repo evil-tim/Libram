@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS entity (
     -- we obtain data for an entity from different datasources
     UNIQUE (datasource_id, code)
 );
+-- Latest timestamp for which price data is available for this entity. NULL means
+-- unbounded (no ceiling). Mirror of min_timestamp: a scan bound for the task
+-- generators, not a filter on stored prices.
+-- CREATE TABLE IF NOT EXISTS cannot add a column to an existing entity table, so
+-- this is an ALTER rather than a column in the CREATE above.
+ALTER TABLE entity
+    ADD COLUMN IF NOT EXISTS max_timestamp timestamptz;
 -- price
 -- Stores price data for a financial entity at a specific timestamp.
 -- Each price record is associated with an entity, and contains the price and/or
