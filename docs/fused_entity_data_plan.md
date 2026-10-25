@@ -199,7 +199,7 @@ CREATE INDEX IF NOT EXISTS idx_entity_group_member_entity
 Notes:
 
 - `quote_currency_id` uses `ON DELETE RESTRICT`: a currency entity that is a group's output currency cannot be deleted silently.
-- `PRIMARY KEY (group_id, entity_id)` serves group-first lookups; the index serves entity-to-groups lookups.
+- `PRIMARY KEY (group_id, entity_id)` serves group-first lookups; the index keeps the entity-delete cascade from scanning the membership table.
 - No aggregation config, no weights, no priorities, no validity ranges.
 
 ### Membership example
@@ -309,6 +309,10 @@ GET    /api/v1/entity-groups/{group_code}/prices
 
 Group bodies are `{code, name, description, quote_currency_id}`; `quote_currency_id` is optional and `null` means PHP. `PATCH` accepts `name`, `description`, and `quote_currency_id`. The member `PUT` body is `{"strength": "strong" | "weak"}` and is a full, idempotent upsert.
 
+CRUD responses add the server-owned fields: a group returns `{id, code, name, description, quote_currency_id, created_at, updated_at}` and a member returns `{entity_id, entity_code, datasource, strength, created_at}`. The output currency is reported as `quote_currency_id` alone — a `currency` label would need the currency module, which Phase 1 deliberately does not depend on; the fused response adds the code in Phase 2.
+
+`code` and `name` are stripped and must be non-blank (422 `invalid_value` otherwise). `description` and `quote_currency_id` accept an explicit `null` — clearing them is meaningful — but `name` does not, because its column is `NOT NULL`; a null `name` is a client error, not a way to clear a field. Deletes answer with `{"deleted": true, ...}` and do not return the removed row.
+
 Changing a group's `quote_currency_id` invalidates nothing on write — members are validated against it when a fused series is requested (Decision 8).
 
 `/prices` parameters:
@@ -321,15 +325,18 @@ membership=strong|all           default strong
 
 Fused queries stay separate from `/api/v1/prices?entity_id=...`: an entity produces observations, a group derives them.
 
+Two things about these bodies. First, they appear under FastAPI's `detail` key, like every other route in this service: the response is `{"detail": {...}}`, where `{...}` is the object in the Body column. Second, the table covers *domain* checks only — a schema-level violation (a missing required field, a malformed UUID) is FastAPI's own 422 with its standard validation list, which this feature does not reshape.
+
 | Condition | Status | Body |
 |---|---|---|
 | Unknown group code | 404 | `{"error": "group_not_found", "group": "<code>"}` |
 | Unknown entity id (`quote_currency_id` or member write) | 404 | `{"error": "entity_not_found", "entity_id": "<uuid>"}` |
+| Removing an entity that is not a member | 404 | `{"error": "member_not_found", "group": "<code>", "entity_id": "<uuid>"}` |
 | Duplicate group code | 409 | `{"error": "group_code_exists", "group": "<code>"}` |
 | A selected member has no single-hop conversion path | 422 | `{"error": "fx_no_path", "entity_code": "...", "datasource": "...", "from": "USDC", "to": "USD"}` |
 | A selected member's rate is missing or `<= 0` for a requested day | 422 | `{"error": "fx_rate_unavailable", "entity_code": "...", "datasource": "...", "pair": "USD", "date": "YYYY-MM-DD"}` |
 | Missing/malformed `start` or `end`, `start >= end`, range over 366 days | 422 | `{"error": "invalid_range", "start": "...", "end": "...", "reason": "..."}` |
-| Invalid `strength` or `membership` value | 422 | `{"error": "invalid_value", "field": "...", "value": "..."}` |
+| Invalid `strength` or `membership` value | 422 | `{"error": "invalid_value", "field": "...", "value": "...", "reason": "..."}` |
 | Nothing admitted by the resolved membership | 422 | `{"error": "empty_membership", "group": "<code>", "membership": "strong"}` |
 | No day has a contributing member | 200 | empty `bars` list; not an error |
 
