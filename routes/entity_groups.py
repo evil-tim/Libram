@@ -1,4 +1,4 @@
-"""HTTP surface for entity groups and their membership.
+"""HTTP surface for entity groups, their membership, and the fused daily series.
 
 Handlers parse, delegate, and map this feature's expected failures. The status
 codes and response bodies in the plan's error table are encoded once on the
@@ -6,9 +6,11 @@ exception types, so every endpoint maps a failure with a single clause rather
 than restating the table per route.
 """
 
+from datetime import date
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from dependencies import get_entity_group_service
 from entity_group_management import (
@@ -152,5 +154,48 @@ async def delete_entity_group_member(
 ):
     try:
         return service.delete_member(group_code, entity_id)
+    except EntityGroupError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get(
+    "/api/v1/entity-groups/{group_code}/prices",
+    operation_id="get_fused_prices",
+    description=(
+        "Fuse a group's members into one daily value per UTC calendar day: each member "
+        "contributes its last observation of the day, converted into the group's output "
+        "currency, and the day's value is their median. Every day reports the sources "
+        "that actually contributed. membership=strong (default) admits only strong "
+        "members; membership=all also admits weak ones."
+    ),
+)
+async def get_fused_prices(
+    group_code: str,
+    start: Annotated[
+        date,
+        Query(description="Start date, inclusive, as YYYY-MM-DD in UTC."),
+    ],
+    end: Annotated[
+        date,
+        Query(
+            description=(
+                "End date, exclusive, as YYYY-MM-DD in UTC. The range may not exceed "
+                "366 days."
+            )
+        ),
+    ],
+    membership: Annotated[
+        str,
+        Query(
+            description=(
+                "strong admits only members that are the actual reference; all also "
+                "admits weak (derivative or wrapped) members."
+            )
+        ),
+    ] = "strong",
+    service: EntityGroupService = Depends(get_entity_group_service),
+):
+    try:
+        return service.get_fused_prices(group_code, start, end, membership)
     except EntityGroupError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

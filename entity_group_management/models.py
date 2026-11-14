@@ -7,6 +7,7 @@ contract lives in one place instead of being restated per endpoint.
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -86,6 +87,89 @@ class EntityGroupValidationError(EntityGroupError):
         )
 
 
+class EntityGroupInvalidRange(EntityGroupError):
+    """The requested day range is empty, inverted, or too long to fuse."""
+
+    status_code = 422
+    error = "invalid_range"
+
+    def __init__(self, start: date, end: date, reason: str) -> None:
+        super().__init__(
+            f"invalid range {start}..{end}: {reason}",
+            start=start.isoformat(),
+            end=end.isoformat(),
+            reason=reason,
+        )
+
+
+class EntityGroupEmptyMembership(EntityGroupError):
+    """The resolved membership admitted nobody, so there is nothing to fuse."""
+
+    status_code = 422
+    error = "empty_membership"
+
+    def __init__(self, code: str, membership: str) -> None:
+        super().__init__(
+            f"group {code} has no members under membership={membership}",
+            group=code,
+            membership=membership,
+        )
+
+
+class EntityGroupNoPath(EntityGroupError):
+    """A selected member's currency has no single-hop route to the group's.
+
+    Deliberately not reported as "no conversion": the plan's policy is that an
+    unconvertible contribution fails the request rather than shrinking it, so the
+    failure names the member and both currencies.
+    """
+
+    status_code = 422
+    error = "fx_no_path"
+
+    def __init__(
+        self,
+        entity_code: str,
+        datasource: str,
+        from_currency: str,
+        to_currency: str,
+    ) -> None:
+        super().__init__(
+            f"no single-hop conversion from {from_currency} to {to_currency} "
+            f"for {entity_code} on {datasource}",
+            entity_code=entity_code,
+            datasource=datasource,
+            **{"from": from_currency, "to": to_currency},
+        )
+
+
+class EntityGroupRateUnavailable(EntityGroupError):
+    """A member's rate is missing, or not positive, for one requested day.
+
+    ``pair`` names the currency whose own series supplies the rate, matching the
+    currency module's convention, so the failing conversion is identifiable
+    without reading the rate entity's id.
+    """
+
+    status_code = 422
+    error = "fx_rate_unavailable"
+
+    def __init__(
+        self,
+        entity_code: str,
+        datasource: str,
+        pair: str,
+        day: date,
+    ) -> None:
+        super().__init__(
+            f"no usable {pair} rate on {day} for {entity_code} on {datasource}",
+            entity_code=entity_code,
+            datasource=datasource,
+            pair=pair,
+            date=day.isoformat(),
+        )
+
+
 class CreateEntityGroupRequest(BaseModel):
     code: str = Field(
         ..., description="Stable group code, unique across groups (e.g. btc)"
@@ -129,11 +213,15 @@ __all__ = [
     "VALID_STRENGTHS",
     "CreateEntityGroupRequest",
     "EntityGroupCodeExists",
+    "EntityGroupEmptyMembership",
     "EntityGroupEntityNotFound",
     "EntityGroupError",
+    "EntityGroupInvalidRange",
     "EntityGroupMemberNotFound",
     "EntityGroupMemberRequest",
+    "EntityGroupNoPath",
     "EntityGroupNotFound",
+    "EntityGroupRateUnavailable",
     "EntityGroupValidationError",
     "UpdateEntityGroupRequest",
 ]

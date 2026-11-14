@@ -1624,6 +1624,7 @@ class Database:
             datasource=row.get("datasource"),
             strength=row.get("strength"),
             created_at=row.get("created_at"),
+            currency_id=row.get("currency_id"),
         )
 
     def create_entity_group(
@@ -1765,12 +1766,14 @@ class Database:
 
         Ordered by entity code then datasource, which is the order fused responses
         report contributors in. The entity code is only unique per datasource, so
-        the join is what makes a member self-describing.
+        the join is what makes a member self-describing. ``currency_id`` comes
+        along because fusion resolves one conversion path per member, and a second
+        read per member to find it would be a needless round trip.
         """
         q = text(
             """
             SELECT m.entity_id, e.code AS entity_code, d.name AS datasource,
-                   m.strength, m.created_at
+                   e.currency_id AS currency_id, m.strength, m.created_at
             FROM entity_group_member m
             JOIN entity e ON e.id = m.entity_id
             JOIN datasource d ON d.id = e.datasource_id
