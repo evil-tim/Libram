@@ -150,9 +150,13 @@ The policy lives here rather than in the module because another consumer may rea
 
 Consequence worth knowing: `membership=all` selects weak members, so a group whose weak member has no single-hop path fails in `all` mode while succeeding in `strong` mode.
 
+One more consequence, easy to mispredict: the rate is read through `rate_series()`, which is **day-keyed and does not carry a rate forward**. A day the rate entity did not observe has no rate, so the request fails for that day. The currency plan's Decision 4 ("the most recent rate at or before the end of `D`") describes `rate_at()`, the instant-based lookup, not this batched one. Operationally that means a business-day FX feed fusing against a 24/7 crypto feed fails every weekend day. That is the strict reading of this decision, and it is what the implementation does; if it proves too strict the fix belongs in the currency module (a carried-forward day-keyed series), not in a partial fused response.
+
 ### 9. Aggregation is an equal-weight median of contributing values, per day
 
 The simple robust choice for independent reference feeds: with three or more contributors one bad print does not move the result. With exactly two contributors the median *is* the mean and gives no outlier protection — the `sources` list is the disclosure, not the aggregation method.
+
+An even contributor count halves the middle pair, which can land one decimal place past six. The bar is quantized to six decimals, `ROUND_HALF_UP` — the precision conversions already use — so a bar never states more precision than its contributors were converted at. Every value in `bars` and `sources` is reported at that precision, converted or not.
 
 Days with no contributing member are omitted from the response.
 
@@ -262,30 +266,32 @@ That is the whole algorithm. It exists as one small function so it can be tested
   "group": { "code": "btc", "name": "Bitcoin reference", "membership": "strong", "currency": "PHP" },
   "range": { "start": "2026-01-01", "end": "2026-01-03" },
   "members": [
+    { "entity_code": "BTC", "datasource": "chainlink-ethereum", "strength": "strong", "status": "included" },
     { "entity_code": "BTC", "datasource": "coindesk-ohlc-json", "strength": "strong", "status": "included" },
     { "entity_code": "BTC", "datasource": "kraken-ticker-rest-json", "strength": "strong", "status": "included" },
-    { "entity_code": "BTC", "datasource": "chainlink-ethereum", "strength": "strong", "status": "included" },
     { "entity_code": "WBTC", "datasource": "web3-uniswap-arbitrum", "strength": "weak", "status": "excluded",
       "reason": "weak_member_excluded_by_strong_mode" }
   ],
   "bars": [
     {
       "date": "2026-01-01",
-      "value": "68418.716667",
+      "value": "68420.000000",
       "sources": [
+        { "entity_code": "BTC", "datasource": "chainlink-ethereum", "value": "68425.150000",
+          "observed_at": "2026-01-01T23:58:00Z",
+          "converted_from": { "currency": "USD", "value": "1200.44", "rate": "57.000000", "direction": "direct" } },
         { "entity_code": "BTC", "datasource": "coindesk-ohlc-json", "value": "68420.000000",
           "observed_at": "2026-01-01T00:00:00Z", "converted_from": null },
         { "entity_code": "BTC", "datasource": "kraken-ticker-rest-json", "value": "68411.000000",
           "observed_at": "2026-01-01T23:59:00Z",
-          "converted_from": { "currency": "USD", "value": "1200.19", "rate": "57.000000", "direction": "direct" } },
-        { "entity_code": "BTC", "datasource": "chainlink-ethereum", "value": "68425.150000",
-          "observed_at": "2026-01-01T23:58:00Z",
-          "converted_from": { "currency": "USD", "value": "1200.44", "rate": "57.000000", "direction": "direct" } }
+          "converted_from": { "currency": "USD", "value": "1200.19", "rate": "57.000000", "direction": "direct" } }
       ]
     }
   ]
 }
 ```
+
+The bar's `value` is the median of its three contributions (68425.15, 68420, 68411 → 68420), not their mean: 68418.716667 would be the mean, which Decision 9 does not specify.
 
 - `value` is in the group's output currency, in both `bars` and `sources`. `converted_from` projects the arithmetic the currency module applied — raw value, its currency, the stored rate, and the direction it was applied in (`direct` multiplies, `inverse` divides) — so a converted contribution is never indistinguishable from a directly observed one and its arithmetic is reproducible. It is `null` when no conversion applied.
 - `group.currency` is the output currency code, `PHP` when `quote_currency_id` is `NULL`.
@@ -340,12 +346,16 @@ Two things about these bodies. First, they appear under FastAPI's `detail` key, 
 | Duplicate group code | 409 | `{"error": "group_code_exists", "group": "<code>"}` |
 | A selected member has no single-hop conversion path | 422 | `{"error": "fx_no_path", "entity_code": "...", "datasource": "...", "from": "USDC", "to": "USD"}` |
 | A selected member's rate is missing or `<= 0` for a requested day | 422 | `{"error": "fx_rate_unavailable", "entity_code": "...", "datasource": "...", "pair": "USD", "date": "YYYY-MM-DD"}` |
-| Missing/malformed `start` or `end`, `start >= end`, range over 366 days | 422 | `{"error": "invalid_range", "start": "...", "end": "...", "reason": "..."}` |
+| `start >= end`, or range over 366 days | 422 | `{"error": "invalid_range", "start": "...", "end": "...", "reason": "..."}` |
 | Invalid `strength` or `membership` value | 422 | `{"error": "invalid_value", "field": "...", "value": "...", "reason": "..."}` |
 | Nothing admitted by the resolved membership | 422 | `{"error": "empty_membership", "group": "<code>", "membership": "strong"}` |
 | No day has a contributing member | 200 | empty `bars` list; not an error |
 
 The 366-day cap exists because these endpoints are exposed as MCP tools; it is validated before any price or rate row is read. Validating, not truncating.
+
+A missing or malformed `start`/`end` is FastAPI's own 422 with its standard validation list, per the note above — `invalid_range` covers only the domain cases: `start >= end` and the cap.
+
+Check order, when more than one condition holds: the `membership` value, then the range, then the group lookup. So an unknown group code with an inverted range answers 422 `invalid_range`, not 404. Both are properties the caller can fix, and validating the request before touching the store is the more useful order; a caller that needs 404 must send a well-formed request.
 
 `pair` in `fx_rate_unavailable` names the currency whose own price series supplies the rate — the rate entity — following the currency module's convention. Under an inverse path that is the group's output currency, not the member's; the member is identified by `entity_code` and `datasource`, so nothing is ambiguous.
 
@@ -399,7 +409,7 @@ Path resolution, conversion arithmetic, quantization, and rate lookup are tested
 
 ## Risks
 
-- **A single missing rate fails a whole range.** Decision 8 is deliberately strict. If that proves brittle on sparse FX data, the alternative is to skip just that member-day — a one-line change, but one that trades integrity for coverage.
+- **A single missing rate fails a whole range.** Decision 8 is deliberately strict, and because `rate_series()` is day-keyed with no carry-forward (see Decision 8), the common trigger is not sparse data but a non-trading day: a business-day FX feed fusing against a 24/7 crypto feed has no Saturday or Sunday rate, so every weekend fused request fails. Expect this on the first real group whose member currencies include a weekday-only source. If it proves brittle, the alternatives are to skip just that member-day — a one-line change that trades integrity for coverage — or to give the currency module a carried-forward day-keyed series, which is the better fix because it keeps every consumer consistent.
 - **Currency topology decides whether a group is viable, and the failures are unintuitive.** Every selected member must be one hop from the group's currency, so `USDC`-denominated members cannot join a `USD` group and a depth-2 currency cannot join a PHP group; both fail as two-hop paths. The seed currency graph in the currency module's plan is what to read before concluding a group is broken.
 - **UTC bucketing is silent for non-UTC sources.** Stated in Decision 6. A group whose native bars are Manila-aligned will be off by one day rather than rejected. Do not fuse such an entity until group timezones exist.
 - **One contributor looks like fusion.** A day built from a single source is returned normally. `sources` makes it visible; there is no minimum-contributor rule.

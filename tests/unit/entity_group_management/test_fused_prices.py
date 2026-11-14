@@ -40,6 +40,11 @@ def observed(day: date, hour: int = 23) -> datetime:
     return datetime(day.year, day.month, day.day, hour, 59, tzinfo=UTC)
 
 
+def _aware(moment: datetime) -> datetime:
+    """Read a naive instant as UTC, the way a ``timestamptz`` column does."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
 class FakeDatabase:
     """Stand-in for ``Database`` holding entities, groups, members, and daily prices."""
 
@@ -115,7 +120,9 @@ class FakeDatabase:
         return [
             price
             for price in self.daily.get(entity_id, [])
-            if start <= price.observed_at < end
+            # The column is timestamptz, so a naive instant is read as UTC rather
+            # than making the comparison raise.
+            if start <= _aware(price.observed_at) < end
         ]
 
 
@@ -350,6 +357,86 @@ def test_the_daily_read_covers_the_range_as_utc_midnights(service, db, fx, btc_g
     assert (rate_start, rate_end) == (start, end)
 
 
+def test_two_distinct_rate_entities_are_each_read_once(db, fx, service):
+    # Both currencies are one hop from PHP, and each supplies its own rate series.
+    # A request that read only the first rate entity, or only one series for the
+    # whole request, would pass every single-rate-entity test.
+    usd = uuid4()
+    eur = uuid4()
+    fx.add_currency(usd, "USD", in_currency=None)
+    fx.add_currency(eur, "EUR", in_currency=None)
+    in_usd = db.add_entity("BTC", "kraken-ticker-rest-json", currency_id=usd)
+    in_eur = db.add_entity("BTC", "bitstamp-rest-json", currency_id=eur)
+    group_id = db.add_group("btc")
+    db.add_member(group_id, in_usd)
+    db.add_member(group_id, in_eur)
+    db.set_daily(in_usd, (JAN_1, "1200"))
+    db.set_daily(in_eur, (JAN_1, "10"))
+    fx.set_rates(usd, {JAN_1: Decimal(57)})
+    fx.set_rates(eur, {JAN_1: Decimal(6840)})
+
+    sources = service.get_fused_prices("btc", JAN_1, JAN_3)["bars"][0]["sources"]
+
+    assert sorted(call[0] for call in fx.rate_series_calls) == sorted([usd, eur])
+    # 1200 * 57 and 10 * 6840 are the same value in PHP by construction.
+    assert [source["value"] for source in sources] == ["68400.000000"] * 2
+    assert [source["converted_from"]["currency"] for source in sources] == [
+        "EUR",
+        "USD",
+    ]
+
+
+def test_currency_ids_stored_as_strings_still_resolve_to_identity(db, fx, service):
+    # The uuid columns come back as UUID, but a fake or a future driver may hand
+    # back a string. Comparing a str to a UUID silently defeats the identity
+    # check and turns a same-currency member into a spurious fx_no_path.
+    usd = uuid4()
+    fx.add_currency(usd, "USD", in_currency=None)
+    kraken = db.add_entity("BTC", "kraken-ticker-rest-json", currency_id=str(usd))
+    group_id = db.add_group("btc", quote_currency_id=str(usd))
+    db.add_member(group_id, kraken)
+    db.set_daily(kraken, (JAN_1, "1200.000000"))
+
+    payload = service.get_fused_prices("btc", JAN_1, JAN_2)
+
+    assert payload["group"]["currency"] == "USD"
+    assert payload["bars"][0]["value"] == "1200.000000"
+    assert payload["bars"][0]["sources"][0]["converted_from"] is None
+    assert fx.resolve_calls == []
+    assert fx.rate_series_calls == []
+
+
+def test_currency_labels_are_resolved_once_per_currency_not_per_day(db, fx, service):
+    # `currency_code` reads an entity row. Resolving labels inside the per-day
+    # conversion would make a long range issue one extra query per contribution,
+    # dwarfing the rate reads this method batches.
+    kraken = db.add_entity("BTC", "kraken-ticker-rest-json")
+    group_id = db.add_group("btc")
+    db.add_member(group_id, kraken)
+    db.set_daily(kraken, (JAN_1, "100"), (JAN_2, "100"))
+
+    service.get_fused_prices("btc", JAN_1, JAN_2)
+    one_day = len(fx.label_calls)
+    service.get_fused_prices("btc", JAN_1, JAN_3)
+
+    assert len(fx.label_calls) - one_day == one_day
+
+
+def test_an_unconverted_value_is_reported_at_six_decimals(db, fx, service):
+    # `price` is an unconstrained numeric, so an unconverted contribution must not
+    # carry whatever scale the column returned into a sources array whose other
+    # entries are six-decimal conversions.
+    kraken = db.add_entity("BTC", "kraken-ticker-rest-json")
+    group_id = db.add_group("btc")
+    db.add_member(group_id, kraken)
+    db.set_daily(kraken, (JAN_1, "68420"))
+
+    assert (
+        service.get_fused_prices("btc", JAN_1, JAN_2)["bars"][0]["sources"][0]["value"]
+        == "68420.000000"
+    )
+
+
 # ---------------------------------------------------------------------------
 # failures
 # ---------------------------------------------------------------------------
@@ -480,6 +567,18 @@ def test_a_range_of_exactly_366_days_is_allowed(service, btc_group):
     assert payload["range"]["end"] == "2027-01-02"
 
 
+def test_a_bad_range_reported_before_an_unknown_group(service):
+    # Both checks could fire; the range wins, because it is a property of the
+    # request rather than of the store. Pinned so the precedence is deliberate.
+    with pytest.raises(EntityGroupInvalidRange):
+        service.get_fused_prices("nope", JAN_2, JAN_1)
+
+
+def test_an_unknown_membership_is_rejected_before_an_unknown_group(service):
+    with pytest.raises(EntityGroupValidationError):
+        service.get_fused_prices("nope", JAN_1, JAN_2, membership="any")
+
+
 # ---------------------------------------------------------------------------
 # days and membership edges
 # ---------------------------------------------------------------------------
@@ -508,3 +607,45 @@ def test_a_member_is_skipped_on_a_day_it_did_not_observe(service, db, btc_group)
     # Day 2's two contributors are 69000.00 (PHP) and 1300.00 * 57 = 74100.00, so
     # the median is their mean.
     assert [bar["value"] for bar in bars] == ["68420.000000", "71550.000000"]
+
+
+# ---------------------------------------------------------------------------
+# defensive branches
+# ---------------------------------------------------------------------------
+def test_a_naive_observation_is_reported_as_utc(db, fx, service):
+    # The column is timestamptz, so only a fake or a hand-built record is naive;
+    # it is read as UTC rather than rejected or crashed on.
+    kraken = db.add_entity("BTC", "kraken-ticker-rest-json")
+    group_id = db.add_group("btc")
+    db.add_member(group_id, kraken)
+    db.daily[kraken] = [
+        DailyPrice(
+            day=JAN_1,
+            # Zone stripped on purpose: the naive branch is what is under test.
+            observed_at=datetime(2026, 1, 1, 23, 59, tzinfo=UTC).replace(tzinfo=None),
+            value=Decimal(68420),
+        )
+    ]
+
+    source = service.get_fused_prices("btc", JAN_1, JAN_2)["bars"][0]["sources"][0]
+
+    assert source["observed_at"] == "2026-01-01T23:59:00Z"
+
+
+def test_a_currency_entity_that_is_gone_degrades_to_its_id_in_the_error(
+    db, fx, service
+):
+    # currency_code() raises for an entity that no longer exists. On the error
+    # path that must not become a 500, so the id stands in for the label.
+    missing_currency = uuid4()
+    member = db.add_entity(
+        "BTC", "kraken-ticker-rest-json", currency_id=missing_currency
+    )
+    group_id = db.add_group("btc")
+    db.add_member(group_id, member)
+    db.set_daily(member, (JAN_1, "1200"))
+
+    with pytest.raises(EntityGroupRateUnavailable) as caught:
+        service.get_fused_prices("btc", JAN_1, JAN_2)
+
+    assert caught.value.detail["pair"] == str(missing_currency)

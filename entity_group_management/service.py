@@ -21,9 +21,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, time
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
+from currency_conversion.conversion import CONVERTED_QUANTUM, QUANTIZE_CONTEXT
 from currency_conversion.conversion import convert as convert_value
 from currency_conversion.service import CurrencyConversionService
 from libram_database.db import Database
@@ -218,13 +219,19 @@ class EntityGroupService:
 
         # One path per selected member, resolved up front, and one rate series per
         # distinct rate entity for the whole range: a year-long request issues one
-        # rate query per pair rather than one per day.
+        # rate query per pair rather than one per day. Currency labels are resolved
+        # here too -- `currency_code` reads an entity row, so doing it inside the
+        # per-member-day conversion would issue up to one extra query per
+        # contribution, dwarfing the rate reads this method is careful to batch.
         paths: dict[UUID, FxPath | None] = {}
         currencies: dict[UUID, UUID | None] = {}
+        labels: dict[UUID, str] = {}
         rate_entities: list[UUID] = []
+        rate_labels: dict[UUID, str] = {}
         for member in included:
             currency_id = _as_uuid(member.currency_id)
             currencies[member.entity_id] = currency_id
+            labels[member.entity_id] = self._currency_label(currency_id)
             if currency_id == output_currency_id:
                 paths[member.entity_id] = None
                 continue
@@ -232,6 +239,9 @@ class EntityGroupService:
             paths[member.entity_id] = path
             if path is not None and path.rate_entity_id not in rate_entities:
                 rate_entities.append(path.rate_entity_id)
+                rate_labels[path.rate_entity_id] = self._currency_label(
+                    path.rate_entity_id
+                )
 
         rates = {
             rate_entity_id: self.fx.rate_series(rate_entity_id, start_at, end_at)
@@ -256,14 +266,16 @@ class EntityGroupService:
             path = paths[member.entity_id]
             if path is None:
                 if currencies[member.entity_id] == output_currency_id:
-                    return Converted(value=value)
+                    # Unconverted, but still money in the group's currency, so it
+                    # is reported at the same precision a conversion would use.
+                    return Converted(value=_quantize_money(value))
                 # Only reachable for a member that actually holds a value: no
                 # observation is the missing data this feature smooths over, an
                 # unconvertible observation is a contract violation.
                 raise EntityGroupNoPath(
                     member.entity_code,
                     member.datasource,
-                    self._currency_label(currencies[member.entity_id]),
+                    labels[member.entity_id],
                     output_currency,
                 )
             rate = rates[path.rate_entity_id].get(day)
@@ -271,13 +283,13 @@ class EntityGroupService:
                 raise EntityGroupRateUnavailable(
                     member.entity_code,
                     member.datasource,
-                    self._currency_label(path.rate_entity_id),
+                    rate_labels[path.rate_entity_id],
                     day,
                 )
             return Converted(
                 value=convert_value(value, path, rate),
                 conversion=ConversionDetail(
-                    currency=self._currency_label(currencies[member.entity_id]),
+                    currency=labels[member.entity_id],
                     value=value,
                     rate=rate,
                     direction=path.direction,
@@ -399,6 +411,19 @@ def _iso_utc(moment: datetime) -> str:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _quantize_money(value: Decimal) -> Decimal:
+    """Report an unconverted value at the precision conversions use.
+
+    A member already in the group's currency is not converted, but its value is
+    still money in that currency, and ``price`` is an unconstrained ``numeric``.
+    Without this, one ``sources`` array would mix six-decimal conversions with
+    whatever scale the column happened to return.
+    """
+    return value.quantize(
+        CONVERTED_QUANTUM, rounding=ROUND_HALF_UP, context=QUANTIZE_CONTEXT
+    )
 
 
 def _member_rollup(

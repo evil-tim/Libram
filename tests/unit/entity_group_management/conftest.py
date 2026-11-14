@@ -32,6 +32,7 @@ class FakeCurrencyConversion:
         self.labels = dict(labels or {})
         self.rate_series_calls: list[tuple[UUID, datetime, datetime]] = []
         self.resolve_calls: list[tuple[UUID | None, UUID | None]] = []
+        self.label_calls: list[UUID | None] = []
 
     def add_currency(self, currency_id: UUID, code: str, in_currency=None) -> None:
         """Register a currency entity: its code and what its own series is quoted in."""
@@ -46,6 +47,8 @@ class FakeCurrencyConversion:
         return resolve_path(from_id, to_id, self.denominations.get)
 
     def currency_code(self, currency_id: UUID | None) -> str:
+        # A label is a database read in the real service, so the count matters.
+        self.label_calls.append(currency_id)
         if currency_id is None:
             return PHP
         if currency_id not in self.labels:

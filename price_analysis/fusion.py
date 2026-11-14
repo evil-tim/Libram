@@ -38,7 +38,9 @@ VALID_MEMBERSHIP_MODES: tuple[str, ...] = (MEMBERSHIP_STRONG, MEMBERSHIP_ALL)
 #: The one exclusion reason strong mode reports.
 WEAK_EXCLUDED_BY_STRONG = "weak_member_excluded_by_strong_mode"
 
-#: Fused values are reported at the precision conversions already use.
+#: Fused values are reported at the precision conversions already use. Deliberately
+#: a local constant rather than an import: fusion stays independent of the currency
+#: module, and this is a reporting precision, not conversion arithmetic.
 FUSED_QUANTUM = Decimal("0.000001")
 
 #: Quantization runs wider than the default context so a large magnitude cannot
@@ -180,6 +182,11 @@ def fuse_daily(
 
     ``convert`` is called once per member-day that has a value, and any exception
     it raises propagates: an unconvertible contribution fails the request.
+
+    ``series`` is expected to hold one entry per member. A member repeated in it
+    would contribute twice to every day it observed, so the caller must not pass
+    duplicates -- the membership table's ``PRIMARY KEY (group_id, entity_id)`` is
+    what guarantees that upstream.
     """
     if start >= end:
         raise ValueError(f"empty or inverted range: start={start} end={end}")
