@@ -1,6 +1,7 @@
 # Fused Entity Data Plan
 
-Status: Architecture locked; implementation pending.
+Status: Architecture locked; both phases implemented (`feat/entity-groups` for
+Phase 1, `feat/fused-entity-prices` for Phase 2).
 
 Depends on `docs/currency_conversion_plan.md` for Phase 2 only.
 
@@ -233,11 +234,15 @@ select_members(members, mode) -> (included, excluded)
 fuse_daily(
     series: list[MemberSeries],          # member + its DailyPrice list
     start: date, end: date,
-    convert: Callable[[MemberSeries, Decimal, date], Decimal],
+    convert: Callable[[MemberSeries, Decimal, date], Converted],
 ) -> list[FusedBar]
 ```
 
+`convert` returns a `Converted` — the value in the group's currency plus the arithmetic that produced it — rather than a bare `Decimal`. The response has to report `converted_from` per contributor (raw value, its currency, the stored rate, the direction), and fusion is the only layer that iterates member-days, so returning the detail from the callable is what keeps that assembly in one pass. `Converted.conversion` is `None` when the member is already in the group's currency, which is how identity stays distinguishable from a conversion that did nothing.
+
 The service builds `convert` from the group's currency and the currency conversion module: one `FxPath` per selected member resolved up front, and one day-keyed rate series per distinct rate entity for the whole range. `fusion.py` never resolves a path and never reads a rate; its tests pass a literal function.
+
+A pathless member is therefore detected where conversion is attempted, not when paths are resolved. That is Decision 8's asymmetry expressed in code: resolving up front and failing there would turn "this member has no data in the range" into a 422, when missing data is exactly what fusion exists to absorb.
 
 Per requested day, in order:
 
@@ -285,7 +290,7 @@ That is the whole algorithm. It exists as one small function so it can be tested
 - `value` is in the group's output currency, in both `bars` and `sources`. `converted_from` projects the arithmetic the currency module applied — raw value, its currency, the stored rate, and the direction it was applied in (`direct` multiplies, `inverse` divides) — so a converted contribution is never indistinguishable from a directly observed one and its arithmetic is reproducible. It is `null` when no conversion applied.
 - `group.currency` is the output currency code, `PHP` when `quote_currency_id` is `NULL`.
 - `sources` is ordered by `entity_code`, then `datasource`. It *is* the contributor count.
-- `members` is a request-level rollup of membership resolution: what was admitted, what was not, and the single reason code that matters (`weak_member_excluded_by_strong_mode`).
+- `members` is a request-level rollup of membership resolution: what was admitted, what was not, and the single reason code that matters (`weak_member_excluded_by_strong_mode`). It is ordered by `entity_code`, then `datasource`, matching the membership listing.
 - Monetary values serialize as strings to preserve `Decimal` precision.
 - Because entity codes are unique only per datasource (`entity UNIQUE (datasource_id, code)`), every reference pairs `entity_code` with `datasource`.
 
@@ -342,6 +347,8 @@ Two things about these bodies. First, they appear under FastAPI's `detail` key, 
 
 The 366-day cap exists because these endpoints are exposed as MCP tools; it is validated before any price or rate row is read. Validating, not truncating.
 
+`pair` in `fx_rate_unavailable` names the currency whose own price series supplies the rate — the rate entity — following the currency module's convention. Under an inverse path that is the group's output currency, not the member's; the member is identified by `entity_code` and `datasource`, so nothing is ambiguous.
+
 ## Layering
 
 Following `AGENTS.md`:
@@ -376,12 +383,19 @@ Each phase is independently verifiable.
 
 Requires the currency conversion module to exist. Phase 1 does not.
 
-- Add `price_analysis/fusion.py`: membership selection, injected conversion, and the daily median.
-- Add `get_fused_prices()` to the service: resolve one `FxPath` per selected member, load one rate series per distinct rate entity, then hand a `convert` callable to `fusion.py`.
-- Add `GET /{group_code}/prices`.
-- Tests (`tests/unit/price_analysis/test_fusion.py`, literal inputs): strong vs. all selection, weak exclusion under `strong`, a member already in the group's currency used unconverted, one injected conversion applied per member-day, no-path failure, missing-rate failure, a member skipped when it has no observation that day, median of three, two-contributor median, empty range, and `empty_membership`.
+Implemented on `feat/fused-entity-prices`:
 
-Path resolution, conversion arithmetic, quantization, and rate lookup are tested in the currency module's own suite, not here. `query_daily_last_price()` is SQL and needs PostgreSQL; per `AGENTS.md` it belongs in `tests/integration/`, not the deterministic unit suite.
+- `price_analysis/fusion.py`: membership selection, injected conversion, and the daily median. `select_members()` returns `(included, excluded)`; `fuse_daily()` returns `FusedBar`s carrying their contributors.
+- `get_fused_prices()` on `EntityGroupService`: resolve one `FxPath` per selected member, load one rate series per distinct rate entity, then hand a `convert` callable to `fusion.py`.
+- `GET /{group_code}/prices`, registered as the `get_fused_prices` MCP tool.
+- Tests: `tests/unit/price_analysis/test_fusion.py` (literal inputs) and `tests/unit/entity_group_management/test_fused_prices.py` (fake database, fake currency data over the real resolution rule), covering strong vs. all selection, weak exclusion under `strong`, a member already in the group's currency used unconverted, one injected conversion per member-day, no-path failure, missing-rate failure, a member skipped when it has no observation that day, median of three, two-contributor median, empty range, `empty_membership`, the range cap, and the inverse direction.
+
+Two things the implementation added that this section did not anticipate:
+
+- `EntityGroupMemberDetail.currency_id`, joined in the membership read. Fusion resolves a path per member and needs each member's own denomination; the alternative was one extra entity read per member.
+- `get_entity_group_service` chains the currency conversion provider, so the service is constructed with both dependencies rather than reaching for one inside a method.
+
+Path resolution, conversion arithmetic, quantization, and rate lookup are tested in the currency module's own suite, not here. `query_daily_last_price()` is SQL and needs PostgreSQL; per `AGENTS.md` it belongs in `tests/integration/`, not the deterministic unit suite. **That remains true after Phase 2**: the fused tests supply a fake that reduces to one row per day, so the read's `DISTINCT ON` / `AT TIME ZONE 'UTC'` bucketing is reviewed, not proven.
 
 ## Risks
 
@@ -418,7 +432,7 @@ Phase 2 additionally requires the currency conversion module's suite to pass; th
 
 Confirm existing entity and raw-price behaviour is unchanged: `tests/unit/price_analysis/test_comparison.py`, `tests/unit/price_management/`, and `routes/prices.py` are not touched by this feature.
 
-No implementation, migration, or seed changes ship with this document. Phase 1 is the first change to `schema.sql`.
+No implementation, migration, or seed changes ship with this document; it is a design record. Phase 1 is the first change to `schema.sql`, and Phase 2 adds no DDL at all.
 
 ## Repository references
 
