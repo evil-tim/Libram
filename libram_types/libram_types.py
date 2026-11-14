@@ -179,7 +179,9 @@ class EntityGroupMemberDetail:
     """A member joined to the entity it names, for responses.
 
     ``code`` is unique only per datasource, so a member reference always pairs
-    ``entity_code`` with ``datasource``.
+    ``entity_code`` with ``datasource``. ``currency_id`` is the currency that
+    entity's own price series is quoted in (``None`` means PHP); fusion needs it
+    to resolve a conversion path per member.
     """
 
     entity_id: UUID
@@ -187,3 +189,4 @@ class EntityGroupMemberDetail:
     datasource: str
     strength: str
     created_at: Optional[datetime] = None
+    currency_id: Optional[UUID] = None
