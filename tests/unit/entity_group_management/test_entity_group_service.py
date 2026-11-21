@@ -138,8 +138,8 @@ def db():
 
 
 @pytest.fixture
-def service(db):
-    return EntityGroupService(db)
+def service(db, fx):
+    return EntityGroupService(db, fx)
 
 
 def create_body(

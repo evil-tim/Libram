@@ -38,8 +38,11 @@ async def get_currency_conversion_service(
 
 async def get_entity_group_service(
     db: Database = Depends(get_database),
+    currency_conversion: CurrencyConversionService = Depends(
+        get_currency_conversion_service
+    ),
 ) -> EntityGroupService:
-    return EntityGroupService(db)
+    return EntityGroupService(db, currency_conversion)
 
 
 async def get_fundamentals_manager_service(

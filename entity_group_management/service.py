@@ -1,41 +1,78 @@
-"""Group and membership CRUD for fused entity data.
+"""Group and membership CRUD, plus the fused daily read for fused entity data.
 
-Phase 1 of ``docs/fused_entity_data_plan.md``. Nothing here computes a fused
-value: this module owns which entities make up a group, how strongly each one
-represents it, and which currency the fused result should be reported in.
+Phase 1 of ``docs/fused_entity_data_plan.md`` is the CRUD surface: which entities
+make up a group, how strongly each one represents it, and which currency the fused
+result should be reported in. Phase 2 adds the read that reduces the members to
+one daily value.
 
 ``quote_currency_id`` is validated only for existence. Whether a member can
 actually be converted into that currency is decided when a fused series is
 requested, because the verdict depends on the group's currency, on the member's
 currency, and on which rate rows exist at that moment — all of which can change
 after a write.
+
+The fused read keeps conversion on the far side of a boundary: this module
+resolves one ``FxPath`` per selected member and loads one rate series per rate
+entity, then hands ``price_analysis.fusion`` a plain callable. Fusion itself never
+sees a database or a currency module.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import UTC, date, datetime, time
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
+from currency_conversion.conversion import CONVERTED_QUANTUM, QUANTIZE_CONTEXT
+from currency_conversion.conversion import convert as convert_value
+from currency_conversion.service import CurrencyConversionService
 from libram_database.db import Database
-from libram_types.libram_types import EntityGroupMemberDetail, EntityGroupRecord
+from libram_types.libram_types import (
+    EntityGroupMemberDetail,
+    EntityGroupRecord,
+    FxPath,
+)
+from price_analysis.fusion import (
+    MEMBERSHIP_STRONG,
+    VALID_MEMBERSHIP_MODES,
+    ConversionDetail,
+    Converted,
+    ExcludedMember,
+    FusableMember,
+    FusedBar,
+    MemberSeries,
+    fuse_daily,
+    select_members,
+)
 
 from .models import (
     VALID_STRENGTHS,
     CreateEntityGroupRequest,
     EntityGroupCodeExists,
+    EntityGroupEmptyMembership,
     EntityGroupEntityNotFound,
+    EntityGroupInvalidRange,
     EntityGroupMemberNotFound,
     EntityGroupMemberRequest,
+    EntityGroupNoPath,
     EntityGroupNotFound,
+    EntityGroupRateUnavailable,
     EntityGroupValidationError,
     UpdateEntityGroupRequest,
 )
 
+#: The longest range a single fused request may cover. These endpoints are exposed
+#: as MCP tools, and the cap is validated before any price or rate row is read.
+MAX_FUSED_RANGE_DAYS = 366
+
 
 class EntityGroupService:
-    """CRUD over entity groups and their membership."""
+    """CRUD over entity groups and their membership, and the fused daily read."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, fx: CurrencyConversionService):
         self.db = db
+        self.fx = fx
 
     # ------------------------------------------------------------------
     # groups
@@ -138,8 +175,182 @@ class EntityGroupService:
         return {"deleted": True, "code": code, "entity_id": str(entity_id)}
 
     # ------------------------------------------------------------------
+    # fused daily read
+    # ------------------------------------------------------------------
+    def get_fused_prices(
+        self,
+        code: str,
+        start: date,
+        end: date,
+        membership: str = MEMBERSHIP_STRONG,
+    ) -> dict:
+        """Reduce a group's selected members to one median value per UTC day.
+
+        Every selected member's daily series is fetched, converted into the
+        group's output currency, and fused. A member with no observation on a day
+        is absent from that day's contributors; a member that holds a value but
+        cannot be converted fails the request, naming the member and the day.
+
+        A member already quoted in the output currency is used unconverted and
+        reports ``converted_from: null``, which is not the same as a conversion
+        that did nothing.
+        """
+        if membership not in VALID_MEMBERSHIP_MODES:
+            raise EntityGroupValidationError(
+                "membership",
+                membership,
+                f"must be one of {list(VALID_MEMBERSHIP_MODES)}",
+            )
+        start_at, end_at = self._utc_range(start, end)
+        group = self._require_group(code)
+
+        members = [
+            self._fusable_member(detail)
+            for detail in self.db.list_entity_group_members(group.id)
+        ]
+        included, excluded = select_members(members, membership)
+        if not included:
+            # Nothing to fuse is a caller error, not an empty series: it means the
+            # group has no strong members while strong mode was requested.
+            raise EntityGroupEmptyMembership(code, membership)
+
+        output_currency_id = _as_uuid(group.quote_currency_id)
+        output_currency = self._currency_label(output_currency_id)
+
+        # One path per selected member, resolved up front, and one rate series per
+        # distinct rate entity for the whole range: a year-long request issues one
+        # rate query per pair rather than one per day. Currency labels are resolved
+        # here too -- `currency_code` reads an entity row, so doing it inside the
+        # per-member-day conversion would issue up to one extra query per
+        # contribution, dwarfing the rate reads this method is careful to batch.
+        paths: dict[UUID, FxPath | None] = {}
+        currencies: dict[UUID, UUID | None] = {}
+        labels: dict[UUID, str] = {}
+        rate_entities: list[UUID] = []
+        rate_labels: dict[UUID, str] = {}
+        for member in included:
+            currency_id = _as_uuid(member.currency_id)
+            currencies[member.entity_id] = currency_id
+            labels[member.entity_id] = self._currency_label(currency_id)
+            if currency_id == output_currency_id:
+                paths[member.entity_id] = None
+                continue
+            path = self.fx.resolve(currency_id, output_currency_id)
+            paths[member.entity_id] = path
+            if path is not None and path.rate_entity_id not in rate_entities:
+                rate_entities.append(path.rate_entity_id)
+                rate_labels[path.rate_entity_id] = self._currency_label(
+                    path.rate_entity_id
+                )
+
+        rates = {
+            rate_entity_id: self.fx.rate_series(rate_entity_id, start_at, end_at)
+            for rate_entity_id in rate_entities
+        }
+
+        series = [
+            MemberSeries(
+                member=member,
+                prices=self.db.query_daily_last_price(
+                    member.entity_id, start_at, end_at
+                ),
+            )
+            for member in included
+        ]
+
+        def convert(
+            member_series: MemberSeries, value: Decimal, day: date
+        ) -> Converted:
+            """Convert one member-day, or raise the failure the plan defines."""
+            member = member_series.member
+            path = paths[member.entity_id]
+            if path is None:
+                if currencies[member.entity_id] == output_currency_id:
+                    # Unconverted, but still money in the group's currency, so it
+                    # is reported at the same precision a conversion would use.
+                    return Converted(value=_quantize_money(value))
+                # Only reachable for a member that actually holds a value: no
+                # observation is the missing data this feature smooths over, an
+                # unconvertible observation is a contract violation.
+                raise EntityGroupNoPath(
+                    member.entity_code,
+                    member.datasource,
+                    labels[member.entity_id],
+                    output_currency,
+                )
+            rate = rates[path.rate_entity_id].get(day)
+            if rate is None or rate <= 0:
+                raise EntityGroupRateUnavailable(
+                    member.entity_code,
+                    member.datasource,
+                    rate_labels[path.rate_entity_id],
+                    day,
+                )
+            return Converted(
+                value=convert_value(value, path, rate),
+                conversion=ConversionDetail(
+                    currency=labels[member.entity_id],
+                    value=value,
+                    rate=rate,
+                    direction=path.direction,
+                ),
+            )
+
+        bars = fuse_daily(series, start, end, convert)
+        return {
+            "group": {
+                "code": group.code,
+                "name": group.name,
+                "membership": membership,
+                "currency": output_currency,
+            },
+            "range": {"start": start.isoformat(), "end": end.isoformat()},
+            "members": _member_rollup(included, excluded),
+            "bars": [_fused_bar(bar) for bar in bars],
+        }
+
+    # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+    def _utc_range(self, start: date, end: date) -> tuple[datetime, datetime]:
+        """Turn the requested day range into UTC midnights, or reject it.
+
+        ``end`` is exclusive, so ``start == end`` is an empty range rather than a
+        single day. The cap is enforced here, before any price or rate row is
+        read, and it rejects rather than truncates.
+        """
+        if start >= end:
+            raise EntityGroupInvalidRange(start, end, "start must be before end")
+        if (end - start).days > MAX_FUSED_RANGE_DAYS:
+            raise EntityGroupInvalidRange(
+                start, end, f"range must not exceed {MAX_FUSED_RANGE_DAYS} days"
+            )
+        return (
+            datetime.combine(start, time.min, tzinfo=UTC),
+            datetime.combine(end, time.min, tzinfo=UTC),
+        )
+
+    def _currency_label(self, currency_id: UUID | None) -> str:
+        """Return a currency's reporting label, degrading to the id if it is gone.
+
+        ``currency_code`` raises for an entity that no longer exists; on an error
+        path that must not become a 500.
+        """
+        try:
+            return self.fx.currency_code(currency_id)
+        except ValueError:
+            return str(currency_id)
+
+    @staticmethod
+    def _fusable_member(detail: EntityGroupMemberDetail) -> FusableMember:
+        return FusableMember(
+            entity_id=detail.entity_id,
+            entity_code=detail.entity_code,
+            datasource=detail.datasource,
+            strength=detail.strength,
+            currency_id=_as_uuid(detail.currency_id),
+        )
+
     def _require_group(self, code: str) -> EntityGroupRecord:
         record = self.db.get_entity_group_by_code(code)
         if record is None:
@@ -173,3 +384,98 @@ class EntityGroupService:
             "strength": detail.strength,
             "created_at": detail.created_at.isoformat() if detail.created_at else None,
         }
+
+
+# ---------------------------------------------------------------------------
+# response assembly
+# ---------------------------------------------------------------------------
+def _as_uuid(value: object) -> UUID | None:
+    """Coerce a stored currency id to ``UUID``.
+
+    The database layer returns ``uuid.UUID`` for a uuid column, but a plain string
+    would silently defeat the identity comparison against the group's output
+    currency and turn a same-currency member into a spurious no-path failure, so
+    the type is normalised rather than assumed.
+    """
+    if value is None or isinstance(value, UUID):
+        return value
+    return UUID(str(value))
+
+
+def _iso_utc(moment: datetime) -> str:
+    """Format an observation instant as UTC with a ``Z`` suffix.
+
+    A naive value can only come from a fake or a hand-built record; it is read as
+    UTC rather than rejected, because the column it mirrors is ``timestamptz``.
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _quantize_money(value: Decimal) -> Decimal:
+    """Report an unconverted value at the precision conversions use.
+
+    A member already in the group's currency is not converted, but its value is
+    still money in that currency, and ``price`` is an unconstrained ``numeric``.
+    Without this, one ``sources`` array would mix six-decimal conversions with
+    whatever scale the column happened to return.
+    """
+    return value.quantize(
+        CONVERTED_QUANTUM, rounding=ROUND_HALF_UP, context=QUANTIZE_CONTEXT
+    )
+
+
+def _member_rollup(
+    included: Sequence[FusableMember], excluded: Sequence[ExcludedMember]
+) -> list[dict]:
+    """Report what membership resolution admitted, and what it did not.
+
+    Ordered by entity code then datasource, the same order the membership listing
+    uses, so the two views of a group agree.
+    """
+    rollup = [
+        {
+            "entity_code": member.entity_code,
+            "datasource": member.datasource,
+            "strength": member.strength,
+            "status": "included",
+        }
+        for member in included
+    ]
+    rollup.extend(
+        {
+            "entity_code": item.member.entity_code,
+            "datasource": item.member.datasource,
+            "strength": item.member.strength,
+            "status": "excluded",
+            "reason": item.reason,
+        }
+        for item in excluded
+    )
+    return sorted(rollup, key=lambda row: (row["entity_code"], row["datasource"]))
+
+
+def _fused_bar(bar: FusedBar) -> dict:
+    """Serialize one fused day, with money as strings to keep ``Decimal`` precision."""
+    return {
+        "date": bar.day.isoformat(),
+        "value": str(bar.value),
+        "sources": [
+            {
+                "entity_code": source.entity_code,
+                "datasource": source.datasource,
+                "value": str(source.value),
+                "observed_at": _iso_utc(source.observed_at),
+                "converted_from": None
+                if source.converted_from is None
+                else {
+                    "currency": source.converted_from.currency,
+                    "value": str(source.converted_from.value),
+                    "rate": str(source.converted_from.rate),
+                    "direction": source.converted_from.direction,
+                },
+            }
+            for source in bar.sources
+        ],
+    }

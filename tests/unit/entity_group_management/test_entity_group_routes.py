@@ -11,6 +11,7 @@ Note what this does *not* cover: FastAPI renders ``HTTPException.detail`` as
 """
 
 import asyncio
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -20,15 +21,21 @@ import routes.entity_groups as routes
 from entity_group_management import (
     CreateEntityGroupRequest,
     EntityGroupCodeExists,
+    EntityGroupEmptyMembership,
     EntityGroupEntityNotFound,
+    EntityGroupInvalidRange,
     EntityGroupMemberNotFound,
     EntityGroupMemberRequest,
+    EntityGroupNoPath,
     EntityGroupNotFound,
+    EntityGroupRateUnavailable,
     EntityGroupValidationError,
     UpdateEntityGroupRequest,
 )
 
 ENTITY_ID = uuid4()
+START = date(2026, 1, 1)
+END = date(2026, 1, 3)
 
 
 class FailingService:
@@ -48,6 +55,7 @@ class FailingService:
     list_members = _raise
     upsert_member = _raise
     delete_member = _raise
+    get_fused_prices = _raise
 
 
 class StubService:
@@ -154,6 +162,65 @@ CREATE_BODY = CreateEntityGroupRequest(code="btc", name="Bitcoin reference")
                 "entity_id": str(ENTITY_ID),
             },
         ),
+        (
+            routes.get_fused_prices,
+            {"group_code": "btc", "start": START, "end": END, "membership": "all"},
+            EntityGroupNoPath("WBTC", "web3-uniswap-arbitrum", "USDC", "PHP"),
+            422,
+            {
+                "error": "fx_no_path",
+                "entity_code": "WBTC",
+                "datasource": "web3-uniswap-arbitrum",
+                "from": "USDC",
+                "to": "PHP",
+            },
+        ),
+        (
+            routes.get_fused_prices,
+            {"group_code": "btc", "start": START, "end": END, "membership": "strong"},
+            EntityGroupRateUnavailable("BTC", "kraken-ticker-rest-json", "USD", START),
+            422,
+            {
+                "error": "fx_rate_unavailable",
+                "entity_code": "BTC",
+                "datasource": "kraken-ticker-rest-json",
+                "pair": "USD",
+                "date": "2026-01-01",
+            },
+        ),
+        (
+            routes.get_fused_prices,
+            {"group_code": "btc", "start": START, "end": END, "membership": "strong"},
+            EntityGroupInvalidRange(START, START, "start must be before end"),
+            422,
+            {
+                "error": "invalid_range",
+                "start": "2026-01-01",
+                "end": "2026-01-01",
+                "reason": "start must be before end",
+            },
+        ),
+        (
+            routes.get_fused_prices,
+            {"group_code": "btc", "start": START, "end": END, "membership": "strong"},
+            EntityGroupEmptyMembership("btc", "strong"),
+            422,
+            {"error": "empty_membership", "group": "btc", "membership": "strong"},
+        ),
+        (
+            routes.get_fused_prices,
+            {"group_code": "btc", "start": START, "end": END, "membership": "any"},
+            EntityGroupValidationError(
+                "membership", "any", "must be one of ['strong', 'all']"
+            ),
+            422,
+            {
+                "error": "invalid_value",
+                "field": "membership",
+                "value": "any",
+                "reason": "must be one of ['strong', 'all']",
+            },
+        ),
     ],
 )
 def test_each_domain_error_maps_to_its_documented_status_and_body(
@@ -183,3 +250,17 @@ def test_handlers_pass_the_service_result_through_unchanged():
         "get_group",
         "create_group",
     ]
+
+
+def test_the_fused_handler_forwards_the_range_and_membership():
+    sentinel = {"bars": []}
+    service = StubService(sentinel)
+
+    result = asyncio.run(
+        routes.get_fused_prices(
+            group_code="btc", start=START, end=END, membership="all", service=service
+        )
+    )
+
+    assert result is sentinel
+    assert service.calls == [("get_fused_prices", ("btc", START, END, "all"), {})]
