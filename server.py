@@ -14,12 +14,15 @@ from cli_schedule import build_all_tasks
 
 logger = logging.getLogger(f"uvicorn.{__name__}")
 
+
 # scheduler setup
 def build_all_tasks_no_args():
     build_all_tasks(None)
 
+
 scheduler = BackgroundScheduler()
 scheduler.add_job(build_all_tasks_no_args, CronTrigger(hour="8,20", minute="0"))
+
 
 # server lifecycle events for startup and shutdown
 def startup(_app: FastAPI):
@@ -62,6 +65,7 @@ app = FastAPI(lifespan=lifespan, name="Libram Price Feed API", version="1.0.0")
 from routes.compare import router as compare_router
 from routes.dividends import router as dividends_router
 from routes.entities import router as entities_router
+from routes.entity_groups import router as entity_groups_router
 from routes.fundamentals import router as fundamentals_router
 from routes.indicators import router as indicators_router
 from routes.portfolios import router as portfolios_router
@@ -74,6 +78,7 @@ app.include_router(compare_router)
 app.include_router(fundamentals_router)
 app.include_router(portfolios_router)
 app.include_router(dividends_router)
+app.include_router(entity_groups_router)
 
 # MCP setup: expose MCP under /mcp as a stateless HTTP transport
 mcp = FastMCP.from_fastapi(app=app, name="Libram Price Feed MCP", version="1.0.0")
